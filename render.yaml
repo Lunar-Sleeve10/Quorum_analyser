@@ -85,3 +85,70 @@ services:
         value: "2"
       - key: LOG_LEVEL
         value: INFO
+
+  # ── Band agents (one worker process runs all 7 roles) ──────────────
+  # Shares the same DATABASE_URL so _db_config_from_room() can read the
+  # Room rows the API creates. Must also share LLM keys and Band creds.
+  - type: worker
+    name: quorum-agents
+    runtime: python
+    plan: free
+    rootDir: quorum
+    buildCommand: pip install -r requirements.txt -r requirements/backend.txt
+    startCommand: python launch_all.py
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: quorum-db
+          property: connectionString
+      # Band transport
+      - key: THENVOI_REST_URL
+        value: https://app.band.ai/
+      - key: THENVOI_WS_URL
+        value: wss://app.band.ai/api/v1/socket/websocket
+      - key: BAND_REST_URL
+        value: https://app.band.ai
+      - key: DASHBOARD_API_KEY
+        sync: false
+      - key: DASHBOARD_AGENT_ID
+        sync: false
+      - key: BAND_ROOM_ID
+        sync: false
+      # LLM routing (must match the API service)
+      - key: LLM_BACKEND
+        sync: false
+      - key: PLANNER_PROVIDER
+        value: aiml
+      - key: ADJUDICATOR_PROVIDER
+        value: aiml
+      - key: SQL_ANALYST_PROVIDER
+        value: featherless
+      - key: GUARDIAN_PROVIDER
+        value: featherless
+      - key: REPORTER_PROVIDER
+        value: featherless
+      - key: AIML_API_KEY
+        sync: false
+      - key: FEATHERLESS_API_KEY
+        sync: false
+      - key: AIML_BASE_URL
+        value: https://api.aimlapi.com/v1
+      - key: FEATHERLESS_BASE_URL
+        value: https://api.featherless.ai/v1
+      - key: FEATHERLESS_REASONING_MODEL
+        value: openai/gpt-oss-20b
+      - key: FEATHERLESS_SQL_MODEL
+        value: Qwen/Qwen2.5-Coder-32B-Instruct
+      - key: GROQ_API_KEY
+        sync: false
+      - key: CREDENTIAL_ENCRYPTION_KEY
+        sync: false
+      # Database defaults for agent env-fallback
+      - key: DB_TYPE
+        value: postgres
+      - key: DB_PATH
+        fromDatabase:
+          name: quorum-db
+          property: connectionString
+      - key: LOG_LEVEL
+        value: INFO

@@ -66,7 +66,13 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     def _startup() -> None:
         Base.metadata.create_all(bind=engine)   # dev convenience; Alembic in prod
-        _seed_samples()
+        # Sample .db files only exist locally — skip seeding when DATABASE_URL
+        # points to Postgres (deployed on Render / production).
+        if s.database_url.startswith("sqlite"):
+            _seed_samples()
+        else:
+            logger.info("Skipping sample seeding (non-SQLite database: %s)",
+                        s.database_url.split(":", 1)[0])
         logger.info("Quorum API ready (db=%s)", s.database_url.split(':', 1)[0])
 
     @app.get("/")

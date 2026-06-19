@@ -149,22 +149,67 @@ class QuorumBandAdapter(SimpleAdapter):  # type: ignore[misc]
         # worked when a Streamlit process was co-located on the same machine.
         cfg = self._db_config_from_room(room_id)
         if cfg is None:
+            # Fallback: the Room row may live in a different database (e.g.
+            # Render Postgres) than the one the agent process can reach (local
+            # SQLite).  Build a DatabaseConfig from the environment settings
+            # (DB_PATH / DB_TYPE) so the agent can still proceed.
+            logger.warning(
+                "Room lookup returned no db_config for room=%s; "
+                "falling back to environment settings (DB_PATH / DB_TYPE).",
+                room_id,
+            )
+            cfg = self._db_config_from_env()
+        if cfg is None:
             raise RuntimeError(
                 f"Band agent (role={self.role}, room={room_id}): no database "
-                "configuration found in the room's shared_context.  The "
-                "investigation must be started via the backend so that "
-                "execution._run_band() embeds db_config before the first ask()."
+                "configuration found — neither from the room's shared_context "
+                "nor from environment settings (DB_PATH / DB_TYPE).  Ensure "
+                "the backend and agents share the same DATABASE_URL, or set "
+                "DB_PATH in the agent environment."
             )
-        logger.error(
-        "DB CONFIG room=%s type=%s path=%s",
-        room_id,
-        cfg.db_type,
-        cfg.connection_string,
+        logger.info(
+            "DB CONFIG room=%s type=%s conn=%s",
+            room_id,
+            cfg.db_type,
+            cfg.connection_string,
         )
 
         adapter = make_adapter(cfg)
         SchemaCache.get_schema(cfg.connection_string, adapter)
         return context_store.create(room_id, adapter=adapter, db_config=cfg)
+
+    @staticmethod
+    def _db_config_from_env() -> "DatabaseConfig | None":
+        """Fallback: build a DatabaseConfig from environment settings
+        (``settings.db_path``, ``settings.db_type``).
+
+        Used when the Room row written by ``execution._run_band()`` is not
+        visible to this process — typically because the API and agents use
+        different databases (e.g. Render Postgres vs local SQLite during
+        hybrid development).
+        """
+        try:
+            db_path = getattr(settings, "db_path", "") or ""
+            if not db_path:
+                return None
+            db_type_str = str(getattr(settings, "db_type", "sqlite")).lower()
+            # db_type may be a DatabaseType enum or a plain string.
+            try:
+                dbt = DatabaseType(db_type_str)
+            except (ValueError, KeyError):
+                dbt = DatabaseType.SQLITE
+            raw_timeout = getattr(settings, "db_timeout", 30.0)
+            timeout_val = float(raw_timeout) if raw_timeout is not None else 30.0
+            return DatabaseConfig(
+                db_type=dbt,
+                connection_string=db_path,
+                max_rows=int(getattr(settings, "db_max_rows", 10_000)),
+                timeout=timeout_val,
+                read_only=bool(getattr(settings, "db_read_only", True)),
+            )
+        except Exception:
+            logger.exception("Failed to build DatabaseConfig from env settings")
+            return None
 
     @staticmethod
     def _db_config_from_room(room_id: str) -> "DatabaseConfig | None":
