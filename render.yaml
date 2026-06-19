@@ -71,6 +71,11 @@ services:
         sync: false
       - key: BAND_REST_URL
         value: https://app.band.ai
+      # The band-sdk reads these THENVOI_* URLs for its REST/WS transport.
+      - key: THENVOI_REST_URL
+        value: https://app.band.ai/
+      - key: THENVOI_WS_URL
+        value: wss://app.band.ai/api/v1/socket/websocket
       # Optional: pin a fixed room instead of auto-creating per (session,db).
       - key: BAND_ROOM_ID
         sync: false

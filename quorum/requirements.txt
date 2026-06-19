@@ -17,5 +17,6 @@ plotly>=5.20
 # pymysql>=1.1                  # MySQL
 # google-cloud-bigquery>=3.0    # BigQuery
 
-# Band integration (install when wiring the SDK; imports as `thenvoi`)
-# band-sdk[pydantic-ai]>=0.1
+# Band integration — the backend drives Band rooms via band.client.rest, so the
+# SDK must be installed on the server (verified against band-sdk 1.0.0).
+band-sdk[pydantic-ai]>=1.0,<2
