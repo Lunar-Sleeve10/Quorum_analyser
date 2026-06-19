@@ -21,6 +21,10 @@ runs/
 *.db
 *.sqlite
 *.sqlite3
+*.db
+
+!quorum/data/samples/chinook.db
+!quorum/data/samples/northwind.db
 
 # Database credentials
 postgres_config.json

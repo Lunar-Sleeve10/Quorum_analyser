@@ -97,12 +97,14 @@ class LLMRouter:
             base["api_base"] = self.ollama_base_url
         elif provider in (LLMProvider.AIML, LLMProvider.FEATHERLESS):
             # AI/ML API and Featherless are OpenAI-compatible: route through the
-            # openai transport with a custom base_url + key. A redundant
-            # "openai/" prefix on the model id is stripped for the endpoint.
+            # openai transport with a custom base_url + key.
             base["custom_llm_provider"] = "openai"
             base["api_base"] = settings.base_url_for(provider)
             base["api_key"] = settings.api_key_for(provider)
-            if base["model"].startswith("openai/"):
+            # AI/ML uses bare OpenAI model names, so a redundant "openai/" prefix
+            # is stripped. Featherless uses HF-namespaced ids (e.g.
+            # "openai/gpt-oss-20b") where that prefix is meaningful — keep it.
+            if provider == LLMProvider.AIML and base["model"].startswith("openai/"):
                 base["model"] = base["model"].split("/", 1)[1]
         else:
             api_key = settings.api_key_for(provider)
@@ -186,7 +188,18 @@ class LLMRouter:
                 )
             except Exception as exc:
                 last_error = str(exc)
-                if "rate_limit" in last_error.lower() and attempt < self.max_retries - 1:
+                low = last_error.lower()
+                # Auth failures can never succeed on retry — fail fast.
+                if any(s in low for s in (
+                    "invalid_api_key", "invalid api key",
+                    "authenticationerror", "no api key", "401",
+                )):
+                    logger.error(
+                        "Authentication failed for provider=%s; not retrying.",
+                        provider.value,
+                    )
+                    break
+                if "rate_limit" in low and attempt < self.max_retries - 1:
                     wait = self._parse_retry_wait(last_error)
                     logger.warning("Rate limit hit, waiting %.1fs", wait)
                     time.sleep(wait)
@@ -243,7 +256,18 @@ class LLMRouter:
                 )
             except Exception as exc:
                 last_error = str(exc)
-                if "rate_limit" in last_error.lower() and attempt < self.max_retries - 1:
+                low = last_error.lower()
+                # Auth failures can never succeed on retry — fail fast.
+                if any(s in low for s in (
+                    "invalid_api_key", "invalid api key",
+                    "authenticationerror", "no api key", "401",
+                )):
+                    logger.error(
+                        "Authentication failed for provider=%s; not retrying.",
+                        provider.value,
+                    )
+                    break
+                if "rate_limit" in low and attempt < self.max_retries - 1:
                     wait = self._parse_retry_wait(last_error)
                     logger.warning("Rate limit hit, waiting %.1fs", wait)
                     await asyncio.sleep(wait)

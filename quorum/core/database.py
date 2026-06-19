@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from abc import ABC, abstractmethod
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
@@ -81,6 +82,25 @@ class SQLiteAdapter(DatabaseAdapter):
         self.conn: sqlite3.Connection | None = None
         self._lock = Lock()
         mode = "ro" if config.read_only else "rwc"
+        db_path = Path(config.connection_string)
+        logger.info(
+            "Opening SQLite db=%s exists=%s parent_exists=%s mode=%s cwd=%s",
+            db_path, db_path.exists(), db_path.parent.exists(), mode, Path.cwd(),
+        )
+        # In read-only ("ro") mode SQLite never creates the file, so a missing
+        # file fails with the opaque "unable to open database file". Surface a
+        # diagnosable error instead. (On ephemeral hosts like Render, an
+        # uploaded .db does not survive restarts/redeploys.)
+        if config.read_only and not db_path.exists():
+            raise FileNotFoundError(
+                f"SQLite database not found: {db_path} (cwd={Path.cwd()}). "
+                f"The file must exist before opening in read-only mode; on "
+                f"ephemeral hosts ensure it is present at this path or use a "
+                f"persistent store / managed DB."
+            )
+        # rwc can create the DB file but NOT missing parent directories.
+        if not config.read_only:
+            db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(
             f"file:{config.connection_string}?mode={mode}",
             uri=True, timeout=config.timeout, check_same_thread=False,

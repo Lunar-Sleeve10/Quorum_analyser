@@ -27,19 +27,37 @@ services:
       # Set to your Vercel app URL after first deploy, e.g. https://quorum.vercel.app
       - key: FRONTEND_ORIGIN
         value: "*"
-      # LLM provider: groq | aiml | featherless | openai | ollama
+      # LLM routing: leave LLM_BACKEND BLANK so per-agent providers apply.
+      # Crucial decisions -> AI/ML API; everything else -> Featherless.
       - key: LLM_BACKEND
         sync: false
-      - key: GROQ_API_KEY
-        sync: false
+      - key: PLANNER_PROVIDER
+        value: aiml
+      - key: ADJUDICATOR_PROVIDER
+        value: aiml
+      - key: SQL_ANALYST_PROVIDER
+        value: featherless
+      - key: GUARDIAN_PROVIDER
+        value: featherless
+      - key: REPORTER_PROVIDER
+        value: featherless
+      # Set these two SECRETS in the dashboard (sync:false = not auto-filled).
       - key: AIML_API_KEY
+        sync: false
+      - key: FEATHERLESS_API_KEY
         sync: false
       - key: AIML_BASE_URL
         value: https://api.aimlapi.com/v1
-      - key: FEATHERLESS_API_KEY
-        sync: false
       - key: FEATHERLESS_BASE_URL
         value: https://api.featherless.ai/v1
+      # Featherless models (HF-namespaced ids; the org prefix is significant).
+      - key: FEATHERLESS_REASONING_MODEL
+        value: openai/gpt-oss-20b
+      - key: FEATHERLESS_SQL_MODEL
+        value: Qwen/Qwen2.5-Coder-32B-Instruct
+      # Groq no longer used by default; key optional.
+      - key: GROQ_API_KEY
+        sync: false
       - key: MAX_INVESTIGATIONS_PER_SESSION
         value: "3"
       - key: MAX_FOLLOWUPS_PER_INVESTIGATION

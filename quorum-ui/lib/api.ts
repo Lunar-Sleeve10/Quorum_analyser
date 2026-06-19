@@ -3,7 +3,9 @@ import type {
   Quota, Dashboard, Investigation, InvestigationDetail, Room, SystemStatus, DataSource, SchemaInfo,
 } from "@/lib/types"
 
-const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
+// Strip any trailing slash so `${BASE}${path}` never produces a "//" path
+// (a trailing slash in NEXT_PUBLIC_API_BASE_URL yields 404s like //data-sources).
+const BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/+$/, "")
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const token = useSession.getState().token
