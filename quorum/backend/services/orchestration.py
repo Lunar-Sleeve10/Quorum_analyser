@@ -33,9 +33,18 @@ def classify_topology(question: str) -> str:
 
 
 def band_available() -> bool:
+    # Logs WHY it is false so the deployed /healthz band_configured flag is
+    # diagnosable (was previously a silent except -> false).
     try:
         from core.band_bridge import BandBridge  # noqa: F401
         from config import settings
-        return bool(getattr(settings, "dashboard_api_key", ""))
-    except Exception:
+    except Exception as exc:
+        logger.warning("Band unavailable: import of band_bridge failed: %r", exc)
         return False
+    if not getattr(settings, "dashboard_api_key", ""):
+        logger.warning(
+            "Band unavailable: DASHBOARD_API_KEY is empty "
+            "(set it on the service; sync:false keys are not auto-filled)."
+        )
+        return False
+    return True
