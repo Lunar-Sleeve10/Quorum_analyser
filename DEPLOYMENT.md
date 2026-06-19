@@ -226,7 +226,7 @@ Click "Save Changes". Render will restart and pick up the new values.
 
 Build takes 3-5 minutes. Watch the logs in the Render dashboard.
 
-The preDeployCommand `alembic upgrade head` runs first to create database tables.
+On first start, `alembic upgrade head` runs automatically (merged into the start command) to create database tables.
 
 ### 3.5 Get your backend URL
 
