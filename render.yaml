@@ -27,19 +27,58 @@ services:
       # Set to your Vercel app URL after first deploy, e.g. https://quorum.vercel.app
       - key: FRONTEND_ORIGIN
         value: "*"
-      # LLM provider: groq | aiml | featherless | openai | ollama
+      # LLM routing: leave LLM_BACKEND BLANK so per-agent providers apply.
+      # Crucial decisions -> AI/ML API; everything else -> Featherless.
       - key: LLM_BACKEND
         sync: false
-      - key: GROQ_API_KEY
-        sync: false
+      - key: PLANNER_PROVIDER
+        value: aiml
+      - key: ADJUDICATOR_PROVIDER
+        value: aiml
+      - key: SQL_ANALYST_PROVIDER
+        value: featherless
+      - key: GUARDIAN_PROVIDER
+        value: featherless
+      - key: REPORTER_PROVIDER
+        value: featherless
+      # Set these two SECRETS in the dashboard (sync:false = not auto-filled).
       - key: AIML_API_KEY
+        sync: false
+      - key: FEATHERLESS_API_KEY
         sync: false
       - key: AIML_BASE_URL
         value: https://api.aimlapi.com/v1
-      - key: FEATHERLESS_API_KEY
-        sync: false
       - key: FEATHERLESS_BASE_URL
         value: https://api.featherless.ai/v1
+      # Featherless models (HF-namespaced ids; the org prefix is significant).
+      - key: FEATHERLESS_REASONING_MODEL
+        value: openai/gpt-oss-20b
+      - key: FEATHERLESS_SQL_MODEL
+        value: Qwen/Qwen2.5-Coder-32B-Instruct
+      # Groq no longer used by default; key optional.
+      - key: GROQ_API_KEY
+        sync: false
+      # --- Band (distributed multi-agent rooms) ---------------------------
+      # band_available() == true only when DASHBOARD_API_KEY is set; that flag
+      # is what routes investigations to the Band room path (_run_band) instead
+      # of the in-process engine. Set these SECRETS in the dashboard.
+      # ALSO REQUIRED (dashboard, NOT this file): upload agent_config.yaml as a
+      # Secret File mounted at quorum/agent_config.yaml — it holds live per-agent
+      # Band API keys and must never be committed to git.
+      - key: DASHBOARD_API_KEY
+        sync: false
+      - key: DASHBOARD_AGENT_ID
+        sync: false
+      - key: BAND_REST_URL
+        value: https://app.band.ai
+      # The band-sdk reads these THENVOI_* URLs for its REST/WS transport.
+      - key: THENVOI_REST_URL
+        value: https://app.band.ai/
+      - key: THENVOI_WS_URL
+        value: wss://app.band.ai/api/v1/socket/websocket
+      # Optional: pin a fixed room instead of auto-creating per (session,db).
+      - key: BAND_ROOM_ID
+        sync: false
       - key: MAX_INVESTIGATIONS_PER_SESSION
         value: "3"
       - key: MAX_FOLLOWUPS_PER_INVESTIGATION

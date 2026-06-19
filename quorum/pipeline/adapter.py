@@ -228,12 +228,15 @@ class QuorumBandAdapter(SimpleAdapter):  # type: ignore[misc]
             await handler(decoded, tools, room_id, ctx)
         except ClarificationNeeded as cn:
             # Human-in-the-loop escalation: a vague question must become a
-            # visible @user question in the room, not a generic crash.
+            # visible clarification in the room, not a generic crash. The human
+            # is represented by the Dashboard participant (there is no 'user'
+            # participant in the room — posting to 'user' fails delivery and
+            # leaves the message permanently retrying during resync).
             msg_text = getattr(getattr(cn, "request", None), "clarification_message", "") \
                 or "Could you clarify your question (specific metric, region, and timeframe)?"
             await self._post(tools, room_id,
                              f"I need a bit more detail to proceed. {msg_text}",
-                             target_role="user")
+                             target_role="dashboard")
         except Exception as exc:
             logger.exception("adapter error role=%s", self.role)
             await self._post(tools, room_id, f"{self.display_names[self.role]} error: {exc}",

@@ -85,18 +85,24 @@ class ChartType(str, Enum):
 class ModelNames:
     # Reasoning agents (Planner, Adjudicator, Decision Reporter) — default Groq.
     PLANNER = "groq/llama-3.1-8b-instant"
-    ADJUDICATOR = "groq/llama-3.1-70b-versatile"
+    ADJUDICATOR = "groq/llama-3.3-70b-versatile"
     REPORTER = "groq/llama-3.1-8b-instant"
     GUARDIAN = "groq/llama-3.1-8b-instant"
 
     # SQL generation — local code model by default, cloud fallback.
     SQL_ANALYST_LOCAL = "qwen2.5-coder:7b"
-    SQL_ANALYST_CLOUD = "groq/llama-3.1-70b-versatile"
+    SQL_ANALYST_CLOUD = "groq/llama-3.3-70b-versatile"
 
     # AI/ML API equivalents (used when a provider is set to aiml). These are
     # OpenAI-compatible model ids served by aimlapi.com. Adjust per catalog.
     AIML_REASONING = "openai/gpt-4o-mini"
     AIML_SQL = "qwen/qwen2.5-coder-32b-instruct"
+
+    # Featherless (featherless.ai) — OpenAI-compatible, HF-style model ids
+    # (the org prefix, e.g. "openai/" or "Qwen/", is part of the real id and
+    # must NOT be stripped for this endpoint). SQL gets a dedicated coder model.
+    FEATHERLESS_REASONING = "openai/gpt-oss-20b"
+    FEATHERLESS_SQL = "Qwen/Qwen2.5-Coder-32B-Instruct"
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +183,8 @@ class Settings(BaseSettings):
     aiml_base_url: str = Field(default="https://api.aimlapi.com/v1", alias="AIML_BASE_URL")
     featherless_api_key: str = Field(default="", alias="FEATHERLESS_API_KEY")
     featherless_base_url: str = Field(default="https://api.featherless.ai/v1", alias="FEATHERLESS_BASE_URL")
+    featherless_reasoning_model: str = Field(default=ModelNames.FEATHERLESS_REASONING, alias="FEATHERLESS_REASONING_MODEL")
+    featherless_sql_model: str = Field(default=ModelNames.FEATHERLESS_SQL, alias="FEATHERLESS_SQL_MODEL")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
 
@@ -237,10 +245,14 @@ class Settings(BaseSettings):
                 return self.sql_analyst_model_local
             if provider == LLMProvider.AIML:
                 return ModelNames.AIML_SQL
+            if provider == LLMProvider.FEATHERLESS:
+                return self.featherless_sql_model
             return self.sql_analyst_model_cloud
         # Reasoning agents
         if provider == LLMProvider.AIML:
             return ModelNames.AIML_REASONING
+        if provider == LLMProvider.FEATHERLESS:
+            return self.featherless_reasoning_model
         return {
             "planner": self.planner_model,
             "guardian": self.guardian_model,
