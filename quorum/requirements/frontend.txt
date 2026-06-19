@@ -1,0 +1,5 @@
+# Streamlit Command Center (pure API client). Install with:
+#   pip install -r requirements/frontend.txt
+streamlit>=1.30
+httpx>=0.27
+pandas>=2.0

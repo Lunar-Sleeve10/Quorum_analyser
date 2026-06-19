@@ -1,0 +1,59 @@
+# render.yaml — one-click Render blueprint for Quorum v2.
+# Services: API (FastAPI) + UI (Streamlit) + Postgres + Band agents worker.
+databases:
+  - name: quorum-db
+    plan: free
+
+services:
+  - type: web
+    name: quorum-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements/backend.txt -r requirements.txt
+    preDeployCommand: python -m alembic upgrade head
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: quorum-db
+          property: connectionString
+      - key: CREDENTIAL_ENCRYPTION_KEY
+        generateValue: true            # Fernet key, generated once by Render
+      - key: FRONTEND_ORIGIN
+        value: "*"
+      - key: LLM_BACKEND
+        sync: false
+      - key: THENVOI_REST_URL
+        sync: false
+      - key: THENVOI_WS_URL
+        sync: false
+
+  - type: web
+    name: quorum-ui
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements/frontend.txt
+    startCommand: streamlit run frontend/app.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: API_BASE_URL
+        fromService:
+          type: web
+          name: quorum-api
+          property: hostport
+
+  - type: worker
+    name: quorum-agents
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python launch_all.py
+    envVars:
+      - key: THENVOI_REST_URL
+        sync: false
+      - key: THENVOI_WS_URL
+        sync: false
+      - key: LLM_BACKEND
+        sync: false
+      - key: DB_PATH
+        sync: false

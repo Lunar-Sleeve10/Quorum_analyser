@@ -1,0 +1,98 @@
+# =====================
+# Python
+# =====================
+.venv/
+venv/
+.venv_quorum/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# =====================
+# Secrets
+# =====================
+.env
+.env.*
+agent_config.yaml
+
+# =====================
+# Runtime / Memory
+# =====================
+quorum/.quorum_memory/
+quorum/.quorum_band/
+quorum/runs/
+
+# =====================
+# Streamlit
+# =====================
+quorum/.streamlit/
+
+# =====================
+# Databases
+# =====================
+*.db
+*.sqlite
+*.sqlite3
+
+postgres_config.json
+mysql_config.json
+bigquery_config.json
+active_db.json
+
+# =====================
+# Uploads
+# =====================
+uploads/
+
+# =====================
+# Frontend
+# =====================
+quorum-ui/node_modules/
+quorum-ui/.next/
+quorum-ui/out/
+quorum-ui/coverage/
+quorum-ui/build/
+
+next-env.d.ts
+*.tsbuildinfo
+
+# =====================
+# Logs
+# =====================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# =====================
+# IDE
+# =====================
+.vscode/
+.idea/
+
+# =====================
+# OS
+# =====================
+.DS_Store
+Thumbs.db
+
+# =====================
+# Scratch / Temporary
+# =====================
+quorum/quorum checking/
+quorum-ui/quorum ui _ check/
+
+# =====================
+# Archives
+# =====================
+*.zip
+
+# =====================
+# Vercel
+# =====================
+.vercel
+
+combined_code.txt

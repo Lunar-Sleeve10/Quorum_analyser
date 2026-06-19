@@ -1,0 +1,181 @@
+# ===========================================================================
+# Certified Semantic Layer (Metric Catalog)
+# ===========================================================================
+# This file is the single source of truth for what business terms mean. Agents
+# ground every question against these certified definitions instead of letting
+# the model invent a formula. It also feeds the retrievable schema index, so on
+# a large warehouse only the relevant slice is ever shown to the model.
+#
+# For the demo this describes the Chinook sample database, framed as a SaaS
+# company's sales/catalog database. On a real BigQuery warehouse this same file
+# would be generated/curated from INFORMATION_SCHEMA + data-owner annotations.
+# ===========================================================================
+
+metrics:
+  - name: revenue
+    description: Total sales revenue from invoice line items.
+    # The CERTIFIED definition. Revenue is line-item price x quantity — NOT the
+    # whole-invoice Total (which double-counts across line items). This single
+    # line is what prevents the wrong-formula class of error.
+    definition: SUM(InvoiceLine.UnitPrice * InvoiceLine.Quantity)
+    grain: invoice_line
+    tables: [InvoiceLine, Invoice]
+    certified: true
+    synonyms: [sales, total sales, earnings, income, amount sold]
+
+  - name: units_sold
+    description: Total quantity of items sold.
+    definition: SUM(InvoiceLine.Quantity)
+    grain: invoice_line
+    tables: [InvoiceLine]
+    certified: true
+    synonyms: [quantity, volume, copies sold, tracks sold]
+
+  - name: order_count
+    description: Number of distinct invoices (orders).
+    definition: COUNT(DISTINCT Invoice.InvoiceId)
+    grain: invoice
+    tables: [Invoice]
+    certified: true
+    synonyms: [orders, purchases, transactions, number of orders]
+
+  - name: customer_count
+    description: Number of distinct customers.
+    definition: COUNT(DISTINCT Customer.CustomerId)
+    grain: customer
+    tables: [Customer]
+    certified: true
+    synonyms: [customers, buyers, clients, unique customers]
+
+  - name: average_order_value
+    description: Average revenue per invoice.
+    definition: SUM(InvoiceLine.UnitPrice * InvoiceLine.Quantity) / COUNT(DISTINCT Invoice.InvoiceId)
+    grain: invoice
+    tables: [InvoiceLine, Invoice]
+    certified: true
+    synonyms: [aov, average basket, average spend]
+
+entities:
+  - name: artist
+    column: Artist.Name
+    description: The musical artist or band.
+    synonyms: [band, performer, musician, group]
+  - name: track
+    column: Track.Name
+    description: An individual song/track.
+    synonyms: [song, title, recording]
+  - name: album
+    column: Album.Title
+    description: An album.
+    synonyms: [record, release]
+  - name: genre
+    column: Genre.Name
+    description: Musical genre.
+    synonyms: [category, style]
+  - name: customer
+    column: Customer.CustomerId
+    description: A customer who places invoices.
+    synonyms: [buyer, client, account]
+  - name: country
+    column: Invoice.BillingCountry
+    description: Billing country of an invoice.
+    synonyms: [region, market, geography]
+
+tables:
+  - name: Artist
+    description: Musical artists / bands.
+    grain: one row per artist
+    certified: true
+    columns:
+      - {name: ArtistId, type: INTEGER, description: primary key}
+      - {name: Name, type: NVARCHAR, description: artist or band name}
+
+  - name: Album
+    description: Albums, each belonging to one artist.
+    grain: one row per album
+    certified: true
+    columns:
+      - {name: AlbumId, type: INTEGER, description: primary key}
+      - {name: Title, type: NVARCHAR, description: album title}
+      - {name: ArtistId, type: INTEGER, description: FK to Artist}
+
+  - name: Track
+    description: Individual tracks, each belonging to one album.
+    grain: one row per track
+    certified: true
+    columns:
+      - {name: TrackId, type: INTEGER, description: primary key}
+      - {name: Name, type: NVARCHAR, description: track title}
+      - {name: AlbumId, type: INTEGER, description: FK to Album}
+      - {name: GenreId, type: INTEGER, description: FK to Genre}
+      - {name: UnitPrice, type: NUMERIC, description: list price per track}
+
+  - name: Genre
+    description: Musical genres.
+    grain: one row per genre
+    columns:
+      - {name: GenreId, type: INTEGER, description: primary key}
+      - {name: Name, type: NVARCHAR, description: genre name}
+
+  - name: InvoiceLine
+    description: Line items on invoices. The fact table for sales. Revenue is computed here.
+    grain: one row per track sold on an invoice
+    certified: true
+    expensive: true          # the largest table — flag for cost guardrails
+    partition_column: InvoiceId
+    columns:
+      - {name: InvoiceLineId, type: INTEGER, description: primary key}
+      - {name: InvoiceId, type: INTEGER, description: FK to Invoice}
+      - {name: TrackId, type: INTEGER, description: FK to Track}
+      - {name: UnitPrice, type: NUMERIC, description: price per unit at time of sale}
+      - {name: Quantity, type: INTEGER, description: number of units sold}
+
+  - name: Invoice
+    description: Customer invoices (orders). Header-level; Total is the invoice total, NOT per-line revenue.
+    grain: one row per invoice
+    certified: true
+    columns:
+      - {name: InvoiceId, type: INTEGER, description: primary key}
+      - {name: CustomerId, type: INTEGER, description: FK to Customer}
+      - {name: InvoiceDate, type: DATETIME, description: date of the invoice}
+      - {name: BillingCountry, type: NVARCHAR, description: billing country}
+      - {name: Total, type: NUMERIC, description: invoice grand total (do not use for per-artist revenue)}
+
+  - name: Customer
+    description: Customers who place invoices.
+    grain: one row per customer
+    columns:
+      - {name: CustomerId, type: INTEGER, description: primary key}
+      - {name: FirstName, type: NVARCHAR, description: given name}
+      - {name: LastName, type: NVARCHAR, description: family name}
+      - {name: Country, type: NVARCHAR, description: customer country}
+
+# ===========================================================================
+# Factor models (diagnostic decomposition)
+# ===========================================================================
+# Each factor model declares how a metric multiplicatively decomposes, so the
+# diagnostic ("why does A differ from B") path attributes a gap to certified,
+# named factors instead of guessing. product(factors) must equal metric_expr.
+# `dimensions` lists what can be compared and how to slice it (with any joins).
+# This is per-deployment config — swap it to match the connected database. When
+# no factor model matches, the engine falls back to a generic volume x
+# intensity decomposition that reconciles on any schema.
+# ===========================================================================
+
+factor_models:
+  - metric: revenue
+    metric_expr: "SUM(il.UnitPrice * il.Quantity)"
+    from_sql: "FROM InvoiceLine il JOIN Invoice i ON il.InvoiceId = i.InvoiceId"
+    certified: true
+    factors:
+      - {key: customers, label: "Customer Base", expr: "COUNT(DISTINCT i.CustomerId)", question: "Did the number of paying customers differ?"}
+      - {key: frequency, label: "Order Frequency", expr: "COUNT(DISTINCT i.InvoiceId) * 1.0 / NULLIF(COUNT(DISTINCT i.CustomerId), 0)", question: "Did customers order more or less often?"}
+      - {key: basket, label: "Basket Value", expr: "SUM(il.UnitPrice * il.Quantity) * 1.0 / NULLIF(COUNT(DISTINCT i.InvoiceId), 0)", question: "Was the average order value different?"}
+    dimensions:
+      - name: genre
+        joins: "JOIN Track t ON il.TrackId = t.TrackId JOIN Genre g ON t.GenreId = g.GenreId"
+        column: "g.Name"
+        values_sql: "SELECT DISTINCT Name FROM Genre"
+      - name: country
+        column: "i.BillingCountry"
+        values_sql: "SELECT DISTINCT BillingCountry FROM Invoice WHERE BillingCountry IS NOT NULL"

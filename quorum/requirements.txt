@@ -1,0 +1,21 @@
+# Core
+pydantic>=2.6
+pydantic-settings>=2.2
+litellm>=1.40
+pyyaml>=6.0
+python-dotenv>=1.0
+
+# UI
+streamlit>=1.30
+
+# Data / visualization
+pandas>=2.0
+plotly>=5.20
+
+# Database backends (optional — install for the engine you use)
+# psycopg[binary]>=3.1          # Postgres
+# pymysql>=1.1                  # MySQL
+# google-cloud-bigquery>=3.0    # BigQuery
+
+# Band integration (install when wiring the SDK; imports as `thenvoi`)
+# band-sdk[pydantic-ai]>=0.1

@@ -1,0 +1,15 @@
+# Backend control plane (FastAPI + Postgres). Install with:
+#   pip install -r requirements/backend.txt
+fastapi>=0.110
+uvicorn[standard]>=0.29
+SQLAlchemy>=2.0
+alembic>=1.13
+pydantic>=2.6
+pydantic-settings>=2.2
+psycopg[binary]>=3.1        # PostgreSQL driver (prod)
+cryptography>=42.0          # credential encryption at rest
+python-dotenv>=1.0
+httpx>=0.27                 # API client / tests
+python-multipart>=0.0.9     # file uploads (data sources, dictionaries)
+# The agent stack (reused by orchestration) — see requirements.txt / base deps:
+#   pandas, plotly, litellm, pyyaml, band-sdk[pydantic-ai]

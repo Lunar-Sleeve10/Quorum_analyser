@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+agent_config.yaml
+
+# Runtime state
+.quorum_memory/
+.quorum_band/
+runs/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Database credentials
+postgres_config.json
+mysql_config.json
+bigquery_config.json
+active_db.json
+
+# Uploads
+uploads/
+
+# Streamlit (legacy)
+.streamlit/
+streamlit_app.py
+
+# Legacy deployment/docs (optional)
+DEPLOY_RENDER.md
+
+# Archives
+*.zip
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+# Duplicate repositories / backups
+quorum checking/
+
+combined_code.txt
+tree.txt
+frontend-next/
