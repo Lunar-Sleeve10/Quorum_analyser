@@ -286,6 +286,14 @@ def _persist_governance(db, inv, result) -> None:
     if rep.get("revision_occurred"):
         db.add(models.GovernanceEvent(investigation_id=inv.id, type="revision",
                                       detail={"note": "guardian challenged the analyst"}))
+    if rep.get("plan_revision_count"):
+        db.add(models.GovernanceEvent(investigation_id=inv.id, type="plan_review",
+                                      detail={"rounds": rep.get("plan_revision_count"),
+                                              "note": "plan guardian critiqued the plan"}))
+    if rep.get("sql_revision_count"):
+        db.add(models.GovernanceEvent(investigation_id=inv.id, type="sql_compliance",
+                                      detail={"rounds": rep.get("sql_revision_count"),
+                                              "note": "cost sentinel flagged plan non-compliance"}))
     if rep.get("approval_required"):
         db.add(models.GovernanceEvent(investigation_id=inv.id, type="approval_required",
                                       detail={"risk_level": rep.get("risk_level", "high")}))

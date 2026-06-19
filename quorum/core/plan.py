@@ -100,13 +100,19 @@ def descriptive_plan(question: str, normalized: str, pattern: str) -> ExecutionP
     plan = ExecutionPlan(intent="descriptive", question=question,
                          normalized_question=normalized, query_pattern=pattern)
     plan.add_step(PlanStep("plan", "Planner", "classify intent + ground schema"))
-    plan.add_step(PlanStep("sql", "SQL Analyst", "generate + execute SQL",
+    plan.add_step(PlanStep("plan_review", "Plan Guardian",
+                           "review plan completeness (pre-execution)",
                            depends_on=["plan"]))
+    plan.add_step(PlanStep("sql", "SQL Analyst", "generate + execute SQL",
+                           depends_on=["plan_review"]))
     plan.add_step(PlanStep("cost", "Cost Sentinel", "pre-execution cost / safety",
                            depends_on=["sql"]))
+    plan.add_step(PlanStep("compliance", "Cost Sentinel",
+                           "verify SQL implements the approved plan",
+                           depends_on=["sql", "cost"]))
     plan.add_step(PlanStep("review", "Governance Guardian",
                            "compliance + correctness + viz decision",
-                           depends_on=["sql", "cost"]))
+                           depends_on=["compliance"]))
     plan.add_step(PlanStep("report", "Decision Reporter",
                            "finding -> implication -> action", depends_on=["review"]))
     return plan

@@ -26,7 +26,7 @@ export interface Analysis {
 }
 
 const TIME_RE = /(date|month|year|time|day|week|quarter|period|created|order|_at$|^yr$)/i
-const ID_RE = /(^|_)id$|^id$|guid|uuid/i
+const ID_RE = /^id$|.id$|guid|uuid/i
 const STAGE_RE = /(stage|step|status|phase|funnel|state)/i
 const isNum = (v: unknown) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v))
 

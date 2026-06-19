@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quorum — analytics council</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500&display=swap"
+        rel="stylesheet" />
+    <style>
+        :root {
+            --ink: #070912;
+            --ink-2: #0c1020;
+            --panel: rgba(18, 23, 42, .55);
+            --line: rgba(140, 160, 210, .14);
+            --mist: #8a96b6;
+            --ice: #eef2ff;
+            --teal: #4fd1c5;
+            --iris: #8b7df6;
+            --sky: #6aa9ff;
+            --amber: #f4b860;
+            --bad: #f87171;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        html,
+        body {
+            height: 100%
+        }
+
+        body {
+            background:
+                radial-gradient(1200px 800px at 72% 18%, rgba(80, 120, 255, .10), transparent 60%),
+                radial-gradient(1000px 900px at 12% 92%, rgba(139, 125, 246, .10), transparent 55%),
+                var(--ink);
+            color: var(--ice);
+            font-family: "Inter", system-ui, sans-serif;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        #scene {
+            position: fixed;
+            inset: 0;
+            display: block;
+            z-index: 0
+        }
+
+        .atmos {
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            pointer-events: none
+        }
+
+        .atmos.vignette {
+            background: radial-gradient(120% 100% at 50% 38%, transparent 52%, rgba(4, 6, 12, .72) 100%)
+        }
+
+        .atmos.grain {
+            opacity: .05;
+            mix-blend-mode: overlay;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")
+        }
+
+        .stage {
+            position: fixed;
+            inset: 0;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            padding: clamp(20px, 3.4vw, 46px);
+            pointer-events: none
+        }
+
+        .stage>* {
+            pointer-events: auto
+        }
+
+        .top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 24px
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 14px
+        }
+
+        .glyph {
+            width: 30px;
+            height: 30px;
+            flex: 0 0 auto
+        }
+
+        .glyph svg {
+            display: block;
+            width: 100%;
+            height: 100%
+        }
+
+        .wordmark {
+            display: flex;
+            flex-direction: column;
+            line-height: 1
+        }
+
+        .wordmark b {
+            font-family: "Space Grotesk", sans-serif;
+            font-weight: 700;
+            font-size: 18px;
+            letter-spacing: .42em;
+            text-indent: .42em;
+            color: var(--ice)
+        }
+
+        .wordmark span {
+            font-family: "JetBrains Mono", monospace;
+            font-size: 10px;
+            letter-spacing: .26em;
+            color: var(--mist);
+            text-transform: uppercase;
+            margin-top: 7px;
+            text-indent: .26em
+        }
+
+        .session {
+            font-family: "JetBrains Mono", monospace;
+            font-size: 11px;
+            letter-spacing: .12em;
+            color: var(--mist);
+            text-align: right;
+            display: flex;
+            flex-direction: column;
+            gap: 6px
+        }
+
+        .session .dot {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            justify-content: flex-end
+        }
+
+        .session .dot i {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--teal);
+            box-shadow: 0 0 10px var(--teal);
+            animation: pulse 2.4s ease-in-out infinite
+        }
+
+        .session .dot.off i {
+            background: var(--bad);
+            box-shadow: 0 0 10px var(--bad)
+        }
+
+        .session .k {
+            color: var(--ice)
+        }
+
+        .hero {
+            margin-top: auto;
+            max-width: 780px
+        }
+
+        .eyebrow {
+            font-family: "JetBrains Mono", monospace;
+            font-size: 12px;
+            letter-spacing: .34em;
+            text-transform: uppercase;
+            color: var(--teal);
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 22px
+        }
+
+        .eyebrow::before {
+            content: "";
+            width: 34px;
+            height: 1px;
+            background: var(--teal);
+            opacity: .7
+        }
+
+        h1 {
+            font-family: "Space Grotesk", sans-serif;
+            font-weight: 500;
+            font-size: clamp(32px, 5.6vw, 70px);
+            line-height: 1.03;
+            letter-spacing: -.022em;
+            color: var(--ice)
+        }
+
+        h1 .em {
+            font-style: normal;
+            background: linear-gradient(96deg, var(--teal), var(--sky) 48%, var(--iris));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent
+        }
+
+        .sub {
+            margin-top: 22px;
+            max-width: 560px;
+            color: var(--mist);
+            font-size: clamp(15px, 1.5vw, 18px);
+            line-height: 1.6
+        }
+
+        .ask {
+            margin-top: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            max-width: 620px
+        }
+
+        .field {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            background: rgba(12, 16, 32, .5);
+            backdrop-filter: blur(8px);
+            padding: 4px 4px 4px 16px;
+            transition: border-color .25s, box-shadow .25s
+        }
+
+        .field:focus-within {
+            border-color: rgba(79, 209, 197, .6);
+            box-shadow: 0 0 0 1px rgba(79, 209, 197, .25)
+        }
+
+        .field .q {
+            font-family: "JetBrains Mono", monospace;
+            font-size: 11px;
+            color: var(--teal);
+            letter-spacing: .1em
+        }
+
+        .field input {
+            flex: 1;
+            background: none;
+            border: none;
+            color: var(--ice);
+            font-family: "Inter", sans-serif;
+            font-size: 15px;
+            padding: 13px 0;
+            outline: none
+        }
+
+        .field input::placeholder {
+            color: #6b779a
+        }
+
+        .enter {
+            position: relative;
+            border: none;
+            cursor: pointer;
+            font-family: "Space Grotesk", sans-serif;
+            font-weight: 600;
+            font-size: 14px;
+            color: #1a1405;
+            background: var(--amber);
+            padding: 12px 20px;
+            border-radius: 2px;
+            display: inline-flex;
+            align-items: center;
+            gap: 11px;
+            white-space: nowrap;
+            box-shadow: 0 0 0 1px rgba(244, 184, 96, .5), 0 14px 40px -16px rgba(244, 184, 96, .7);
+            transition: transform .25s cubic-bezier(.2, .7, .2, 1), box-shadow .25s, filter .25s
+        }
+
+        .enter:hover {
+            transform: translateY(-2px);
+            filter: brightness(1.06)
+        }
+
+        .enter:focus-visible {
+            outline: 2px solid var(--ice);
+            outline-offset: 3px
+        }
+
+        .enter:disabled {
+            filter: grayscale(.5) brightness(.7);
+            cursor: wait;
+            transform: none
+        }
+
+        .enter .arrow {
+            transition: transform .25s
+        }
+
+        .enter:hover .arrow {
+            transform: translateX(4px)
+        }
+
+        .ask-meta {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            flex-wrap: wrap;
+            font-family: "JetBrains Mono", monospace;
+            font-size: 11px;
+            letter-spacing: .06em;
+            color: var(--mist)
+        }
+
+        .ds {
+            display: flex;
+            align-items: center;
+            gap: 8px
+        }
+
+        .ds label {
+            color: var(--mist)
+        }
+
+        .ds select {
+            background: rgba(12, 16, 32, .6);
+            color: var(--ice);
+            border: 1px solid var(--line);
+            border-radius: 3px;
+            padding: 6px 8px;
+            font-family: "JetBrains Mono", monospace;
+            font-size: 11px;
+            outline: none
+        }
+
+        .ask-meta .skip {
+            color: var(--mist);
+            text-decoration: none;
+            border-bottom: 1px dashed rgba(138, 150, 182, .4);
+            cursor: pointer
+        }
+
+        .ask-meta .skip:hover {
+            color: var(--ice)
+        }
+
+        .boot {
+            margin-top: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            max-width: 430px
+        }
+
+        .boot .row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            font-family: "JetBrains Mono", monospace;
+            font-size: 11px;
+            letter-spacing: .08em;
+            color: var(--mist)
+        }
+
+        .boot .row .pct {
+            color: var(--ice)
+        }
+
+        .boot .track {
+            height: 2px;
+            background: rgba(140, 160, 210, .14);
+            border-radius: 2px;
+            overflow: hidden
+        }
+
+        .boot .fill {
+            height: 100%;
+            width: 0%;
+            border-radius: 2px;
+            background: linear-gradient(90deg, var(--teal), var(--sky));
+            transition: width .4s ease
+        }
+
+        .boot .fill.bad {
+            background: var(--bad)
+        }
+
+        /* ── Right rail ─────────────────────────────────────────────── */
+        .rail {
+            position: fixed;
+            z-index: 2;
+            top: 50%;
+            right: clamp(20px, 3.4vw, 46px);
+            transform: translateY(-50%);
+            width: 282px;
+            max-height: min(74vh, 620px);
+            display: flex;
+            flex-direction: column;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            backdrop-filter: blur(14px);
+            padding: 18px
+        }
+
+        .rail h2 {
+            font-family: "JetBrains Mono", monospace;
+            font-weight: 500;
+            font-size: 10.5px;
+            letter-spacing: .26em;
+            text-transform: uppercase;
+            color: var(--mist);
+            margin-bottom: 14px;
+            display: flex;
+            justify-content: space-between
+        }
+
+        .rail h2 b {
+            color: var(--ice);
+            font-weight: 600
+        }
+
+        /* ── Workflow pipeline stages ───────────────────────────────── */
+        .pipeline {
+            flex: 0 0 auto
+        }
+
+        .stage-item {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 5px 0;
+            opacity: .28;
+            transition: opacity .5s, transform .5s;
+            transform: translateX(6px)
+        }
+
+        .stage-item.ready {
+            opacity: .55;
+            transform: none
+        }
+
+        .stage-item.active {
+            opacity: 1;
+            transform: none
+        }
+
+        .stage-item.done {
+            opacity: .7;
+            transform: none
+        }
+
+        .stage-item .stat {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--mist);
+            flex: 0 0 auto;
+            transition: background .4s, box-shadow .4s
+        }
+
+        .stage-item.active .stat {
+            background: var(--c);
+            box-shadow: 0 0 10px var(--c);
+            animation: blink .7s ease-in-out infinite
+        }
+
+        .stage-item.done .stat {
+            background: var(--teal);
+            box-shadow: 0 0 6px rgba(79, 209, 197, .45)
+        }
+
+        .stage-item .nm {
+            font-family: "Space Grotesk", sans-serif;
+            font-size: 13px;
+            color: var(--ice);
+            flex: 1
+        }
+
+        .stage-item .rl {
+            font-family: "JetBrains Mono", monospace;
+            font-size: 9.5px;
+            letter-spacing: .08em;
+            color: var(--mist);
+            text-transform: uppercase
+        }
+
+        /* ── Live feed ──────────────────────────────────────────────── */
+        .feed {
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid var(--line);
+            overflow-y: auto;
+            display: none;
+            flex-direction: column;
+            gap: 9px
+        }
+
+        .feed.show {
+            display: flex
+        }
+
+        .feed .line {
+            display: flex;
+            gap: 9px;
+            font-size: 12px;
+            line-height: 1.4
+        }
+
+        .feed .line i {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            margin-top: 5px;
+            flex: 0 0 auto;
+            background: var(--c, #8a96b6)
+        }
+
+        .feed .line .who {
+            font-family: "JetBrains Mono", monospace;
+            font-size: 9.5px;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            color: var(--mist)
+        }
+
+        .feed .line .tx {
+            color: #cdd5ec
+        }
+
+        .feed::-webkit-scrollbar {
+            width: 5px
+        }
+
+        .feed::-webkit-scrollbar-thumb {
+            background: rgba(140, 160, 210, .25);
+            border-radius: 3px
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1 }
+            50% { opacity: .35 }
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1 }
+            50% { opacity: .3 }
+        }
+
+        .reveal {
+            opacity: 0;
+            transform: translateY(14px);
+            animation: rise .9s cubic-bezier(.2, .7, .2, 1) forwards
+        }
+
+        .d1 { animation-delay: .25s }
+        .d2 { animation-delay: .4s }
+        .d3 { animation-delay: .55s }
+        .d4 { animation-delay: .7s }
+        .d5 { animation-delay: 1.4s }
+
+        @keyframes rise {
+            to { opacity: 1; transform: none }
+        }
+
+        body.leaving .stage,
+        body.leaving .rail,
+        body.leaving .atmos {
+            opacity: 0;
+            transition: opacity .8s ease
+        }
+
+        @media (max-width:920px) {
+            .rail { display: none }
+            .session .extra { display: none }
+        }
+
+        @media (prefers-reduced-motion:reduce) {
+            .reveal { animation: none; opacity: 1; transform: none }
+            .session .dot i { animation: none }
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="scene"></canvas>
+    <div class="atmos vignette"></div>
+    <div class="atmos grain"></div>
+
+    <main class="stage">
+        <header class="top">
+            <div class="brand reveal d1">
+                <div class="glyph">
+                    <svg viewBox="0 0 32 32" fill="none">
+                        <circle cx="16" cy="16" r="3.2" fill="#f4b860" />
+                        <g stroke="#4fd1c5" stroke-width="1.1" opacity=".9">
+                            <circle cx="16" cy="5" r="2" />
+                            <circle cx="26.5" cy="11" r="2" />
+                            <circle cx="26.5" cy="21" r="2" />
+                            <circle cx="16" cy="27" r="2" />
+                            <circle cx="5.5" cy="21" r="2" />
+                            <circle cx="5.5" cy="11" r="2" />
+                        </g>
+                        <g stroke="rgba(120,140,200,.5)" stroke-width=".8">
+                            <path d="M16 8.2 16 12.8M24.8 12 19 15M24.8 20 19 17M16 23.8 16 19.2M7.2 20 13 17M7.2 12 13 15" />
+                        </g>
+                    </svg>
+                </div>
+                <div class="wordmark"><b>QUORUM</b><span>governed analytics</span></div>
+            </div>
+            <div class="session reveal d2">
+                <span class="dot" id="connDot"><span class="k" id="connState">connecting</span> <i></i></span>
+                <span class="extra" id="connInfo">initialising…</span>
+                <span class="extra" id="clock">—</span>
+            </div>
+        </header>
+
+        <section class="hero">
+            <div class="eyebrow reveal d2">The council is in session</div>
+            <h1 class="reveal d3">Every answer is <span class="em">deliberated</span>,<br />then shown its work.</h1>
+            <p class="sub reveal d4">A supervisor convenes specialist agents — they plan, query, price, and govern
+                each result before it reaches your dashboard. Ask a question and watch them work.</p>
+
+            <div class="ask reveal d4">
+                <div class="field">
+                    <span class="q">ask&nbsp;›</span>
+                    <input id="question" type="text" autocomplete="off"
+                        placeholder="e.g. Why did revenue decline in Q2?" aria-label="Ask the council a question" />
+                    <button class="enter" id="enter" disabled>
+                        <span id="enterLabel">Convening…</span><span class="arrow">→</span>
+                    </button>
+                </div>
+                <div class="ask-meta">
+                    <span class="ds"><label for="ds">data&nbsp;source</label>
+                        <select id="ds" aria-label="Data source">
+                            <option value="">demo</option>
+                        </select></span>
+                    <a class="skip" id="skip" role="button" tabindex="0">skip — open dashboard ›</a>
+                </div>
+            </div>
+
+            <div class="boot">
+                <div class="row"><span id="bootMsg">Booting orchestration</span><span class="pct" id="bootPct">0%</span></div>
+                <div class="track">
+                    <div class="fill" id="bootFill"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <aside class="rail reveal d5">
+        <h2 id="railTitle">Workflow Pipeline <b id="liveCount">—</b></h2>
+        <div class="pipeline" id="pipeline"></div>
+        <div class="feed" id="feed"></div>
+    </aside>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        (function () {
+            "use strict";
+
+            /* ============================================================= *
+             *  BACKEND CONFIG                                                *
+             *  API_BASE: FastAPI backend URL (default: http://localhost:8000)*
+             *  DASHBOARD_URL: Next.js dashboard URL (relative "/" or full)  *
+             * ============================================================= */
+            const API_BASE      = "http://localhost:8000";
+            const DASHBOARD_URL = "/";
+            // ---------------------------------------------------------------
+
+            const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            let sessionToken = null;
+            let liveMode = false;
+            let activeInvestigation = null;
+            let running = false;
+
+            async function api(path, opts) {
+                opts = opts || {};
+                const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+                if (sessionToken) headers["X-Session-Token"] = sessionToken;
+                const res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
+                if (!res.ok) throw new Error(path + " → " + res.status);
+                const data = await res.json();
+                if (data && data.session_token) sessionToken = data.session_token;
+                return data;
+            }
+
+            // ---- 3D scene agent graph (keeps the visual intact) -----------------
+            const C = { teal: 0x4fd1c5, sky: 0x6aa9ff, iris: 0x8b7df6, amber: 0xf4b860 };
+            const HEX = { [C.teal]: "#4fd1c5", [C.sky]: "#6aa9ff", [C.iris]: "#8b7df6", [C.amber]: "#f4b860" };
+            const AGENTS = [
+                { id: "sup", name: "Supervisor",          role: "orchestrator",    core: true, color: C.amber, p: [0, 0, 0] },
+                { id: "pln", name: "Planner",             role: "plan",            color: C.teal,  p: [-5.2, 2.6, -1.2] },
+                { id: "pgd", name: "Plan Guardian",       role: "pre-review",      color: C.iris,  p: [-6.3, -0.6, 1.6] },
+                { id: "sql", name: "SQL Analyst",         role: "query",           color: C.sky,   p: [-2.4, -3.1, -0.6] },
+                { id: "cst", name: "Cost Sentinel",       role: "cost+compliance", color: C.amber, p: [1.9, -3.4, 1.3] },
+                { id: "gov", name: "Gov Guardian",        role: "post-review",     color: C.iris,  p: [5.0, -1.0, -1.4] },
+                { id: "rev", name: "Reviewer",            role: "validation",      color: C.teal,  p: [6.2, 1.8, 1.1] },
+                { id: "rep", name: "Decision Reporter",   role: "report",          color: C.sky,   p: [3.4, 3.4, -1.0] },
+                { id: "inv", name: "Investigator",        role: "diagnose",        color: C.teal,  p: [-1.0, 4.2, 1.7] },
+                { id: "adj", name: "Adjudicator",         role: "attribute",       color: C.iris,  p: [0.4, 1.4, -2.6] },
+            ];
+            const EDGES = [
+                ["sup", "pln"], ["sup", "sql"], ["sup", "gov"], ["sup", "rep"], ["sup", "inv"], ["sup", "adj"],
+                ["pln", "sql"], ["sql", "cst"], ["cst", "gov"], ["gov", "rep"],
+                ["pln", "pgd", true], ["cst", "gov", true], ["gov", "rev", true], ["inv", "adj"], ["adj", "rep"],
+            ];
+            // Map backend sender_role → node id (for 3D flashes)
+            const ROLE2NODE = {
+                supervisor: "sup", planner: "pln", plan_guardian: "pgd",
+                sql_analyst: "sql", sql_engineer: "sql", cost_sentinel: "cst",
+                guardian: "gov", reviewer: "rev", decision_reporter: "rep", reporting_agent: "rep",
+                investigator: "inv", adjudicator: "adj", user: "sup", dashboard: "sup",
+            };
+
+            // ---- Workflow pipeline stages (DOM rail) ----------------------------
+            const PIPELINE_STAGES = [
+                { id: "planning",   name: "Planning",          role: "planner",       color: "#4fd1c5" },
+                { id: "governance", name: "Gov Review",         role: "guardian",      color: "#8b7df6" },
+                { id: "sql_gen",    name: "SQL Generation",     role: "sql analyst",   color: "#6aa9ff" },
+                { id: "sql_val",    name: "SQL Validation",     role: "cost sentinel", color: "#f4b860" },
+                { id: "data_rev",   name: "Data Review",        role: "reviewer",      color: "#4fd1c5" },
+                { id: "reporting",  name: "Reporting",          role: "reporter",      color: "#6aa9ff" },
+                { id: "complete",   name: "Complete",           role: "delivered",     color: "#4fd1c5" },
+            ];
+            // Map sender role → pipeline stage id
+            const ROLE2STAGE = {
+                supervisor: "planning",  planner: "planning",
+                plan_guardian: "governance",
+                sql_analyst: "sql_gen",  sql_engineer: "sql_gen",
+                cost_sentinel: "sql_val",
+                guardian: "governance",  reviewer: "data_rev",
+                reporting_agent: "reporting", decision_reporter: "reporting",
+                investigator: "data_rev", adjudicator: "data_rev",
+                user: "planning",
+            };
+
+            // Build pipeline DOM
+            const pipelineEl = document.getElementById("pipeline");
+            const feedEl     = document.getElementById("feed");
+            const railTitle  = document.getElementById("railTitle");
+            const liveCountEl = document.getElementById("liveCount");
+            PIPELINE_STAGES.forEach(s => {
+                const row = document.createElement("div");
+                row.className = "stage-item"; row.style.setProperty("--c", s.color);
+                row.innerHTML = `<span class="stat"></span><span class="nm">${s.name}</span><span class="rl">${s.role}</span>`;
+                s.el = row; pipelineEl.appendChild(row);
+            });
+
+            function activatePipelineStage(stageId) {
+                let found = false;
+                PIPELINE_STAGES.forEach(s => {
+                    if (s.id === stageId) {
+                        found = true;
+                        s.el.classList.remove("done");
+                        s.el.classList.add("active", "ready");
+                    } else if (!found) {
+                        s.el.classList.remove("active");
+                        s.el.classList.add("done", "ready");
+                    } else {
+                        s.el.classList.remove("active", "done");
+                        s.el.classList.add("ready");
+                    }
+                });
+                const stage = PIPELINE_STAGES.find(s => s.id === stageId);
+                if (stage) liveCountEl.textContent = stage.name;
+            }
+
+            function completePipeline() {
+                PIPELINE_STAGES.forEach(s => {
+                    s.el.classList.remove("active");
+                    s.el.classList.add("done", "ready");
+                });
+                liveCountEl.textContent = "done";
+            }
+
+            function feedLine(nodeId, who, text) {
+                feedEl.classList.add("show");
+                const a = byId[nodeId] || byId.sup;
+                const el = document.createElement("div"); el.className = "line";
+                el.innerHTML = `<i style="--c:${HEX[a.color] || '#8a96b6'}"></i><div><span class="who">${who}</span><br><span class="tx"></span></div>`;
+                el.querySelector(".tx").textContent = text;
+                feedEl.appendChild(el); feedEl.scrollTop = feedEl.scrollHeight;
+                while (feedEl.children.length > 40) feedEl.removeChild(feedEl.firstChild);
+            }
+
+            // ---- three.js scene --------------------------------------------------
+            const canvas = document.getElementById("scene");
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+            const scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x070912, 0.05);
+            const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 200);
+            camera.position.set(0, 0.2, 14.4);
+
+            function glowTex() {
+                const s = 128, cv = document.createElement("canvas"); cv.width = cv.height = s;
+                const g = cv.getContext("2d"), grd = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+                grd.addColorStop(0, "rgba(255,255,255,1)"); grd.addColorStop(.25, "rgba(255,255,255,.55)");
+                grd.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = grd; g.fillRect(0, 0, s, s);
+                const t = new THREE.Texture(cv); t.needsUpdate = true; return t;
+            }
+            const GLOW = glowTex();
+
+            (function stars() {
+                const n = 900, pos = new Float32Array(n * 3);
+                for (let i = 0; i < n; i++) {
+                    const r = 22 + Math.random() * 46, th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+                    pos[i * 3] = r * Math.sin(ph) * Math.cos(th); pos[i * 3 + 1] = r * Math.sin(ph) * Math.sin(th) * 0.6; pos[i * 3 + 2] = r * Math.cos(ph) - 10;
+                }
+                const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+                scene.add(new THREE.Points(g, new THREE.PointsMaterial({
+                    size: .06, color: 0x9fb0d8, transparent: true,
+                    opacity: .55, depthWrite: false, blending: THREE.AdditiveBlending
+                })));
+            })();
+
+            const byId = {}, nodeGroup = new THREE.Group(); scene.add(nodeGroup);
+            function makeRing(r, color) {
+                const seg = 64, pts = []; for (let i = 0; i <= seg; i++) { const t = i / seg * Math.PI * 2; pts.push(new THREE.Vector3(Math.cos(t) * r, Math.sin(t) * r, 0)); }
+                const l = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
+                    new THREE.LineBasicMaterial({ color, transparent: true, opacity: .35 })); l.rotation.x = Math.PI / 2.4; return l;
+            }
+            AGENTS.forEach(a => {
+                const grp = new THREE.Group(); grp.position.set(a.p[0], a.p[1], a.p[2]);
+                const core = a.core ? 0.34 : 0.17;
+                const mesh = new THREE.Mesh(new THREE.SphereGeometry(core, 24, 24), new THREE.MeshBasicMaterial({ color: a.color }));
+                const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+                    map: GLOW, color: a.color, transparent: true,
+                    opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending
+                }));
+                halo.scale.set(a.core ? 3.6 : 2.2, a.core ? 3.6 : 2.2, 1);
+                const ring = a.core ? makeRing(0.62, a.color) : null;
+                grp.add(mesh, halo); if (ring) grp.add(ring); nodeGroup.add(grp);
+                byId[a.id] = { ...a, grp, mesh, halo, ring, ignited: 0, target: 0, flash: 0 };
+            });
+
+            const edgeObjs = [], pulses = [], signals = [];
+            EDGES.forEach(e => {
+                const A = byId[e[0]], B = byId[e[1]], gov = !!e[2];
+                const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([A.grp.position, B.grp.position]),
+                    new THREE.LineBasicMaterial({ color: 0x7d8fc8, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+                scene.add(line); edgeObjs.push({ line, A, B, gov, on: 0 });
+                const col = gov ? C.amber : B.color;
+                const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color: col, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+                sp.scale.set(0.7, 0.7, 1); scene.add(sp);
+                pulses.push({ sp, A, B, gov, t: Math.random(), speed: 0.18 + Math.random() * 0.14, col, active: 0 });
+            });
+
+            function emitSignal(aId, bId, col) {
+                const A = byId[aId], B = byId[bId]; if (!A || !B) return;
+                const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+                    map: GLOW, color: col, transparent: true,
+                    opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending
+                }));
+                sp.scale.set(0.9, 0.9, 1); scene.add(sp);
+                signals.push({ sp, A, B, t: 0, speed: 0.9 });
+                A.flash = 1;
+                if (REDUCED) renderOnce();
+            }
+
+            // ---- boot sequence ---------------------------------------------------
+            const bootFill  = document.getElementById("bootFill"),
+                  bootPct   = document.getElementById("bootPct"),
+                  bootMsg   = document.getElementById("bootMsg"),
+                  enter     = document.getElementById("enter"),
+                  enterLabel = document.getElementById("enterLabel"),
+                  connDot   = document.getElementById("connDot"),
+                  connState = document.getElementById("connState"),
+                  connInfo  = document.getElementById("connInfo"),
+                  questionEl = document.getElementById("question"),
+                  dsEl      = document.getElementById("ds");
+
+            const order = ["sup", "pln", "pgd", "sql", "cst", "gov", "rev", "rep", "inv", "adj"];
+
+            function igniteStep(i, done) {
+                if (i >= order.length) { if (done) done(); return; }
+                const a = byId[order[i]];
+                a.target = 1;  // light up 3D node
+                const pct = Math.round((i + 1) / order.length * 100);
+                bootFill.style.width = pct + "%"; bootPct.textContent = pct + "%";
+                bootMsg.textContent = a.core ? "Supervisor online" : `${a.name} standby`;
+                setTimeout(() => igniteStep(i + 1, done), REDUCED ? 0 : 170 + Math.random() * 110);
+            }
+
+            function ready() {
+                bootMsg.textContent = liveMode ? "Quorum ready · backend connected" : "Quorum ready · offline demo";
+                bootFill.style.width = "100%"; bootPct.textContent = "100%";
+                PIPELINE_STAGES.forEach(s => s.el.classList.add("ready"));
+                enter.disabled = false; updateEnterLabel();
+            }
+
+            function updateEnterLabel() {
+                if (running) { enterLabel.textContent = "Running"; return; }
+                enterLabel.textContent = questionEl.value.trim()
+                    ? (liveMode ? "Run & enter" : "Enter dashboard")
+                    : "Enter dashboard";
+            }
+            questionEl.addEventListener("input", updateEnterLabel);
+
+            // ---- backend connect -------------------------------------------------
+            async function connect() {
+                try {
+                    const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 3500);
+                    const res = await fetch(API_BASE + "/healthz", { signal: ctrl.signal }); clearTimeout(to);
+                    if (!res.ok) throw new Error("healthz " + res.status);
+                    const h = await res.json();
+                    liveMode = (h.status === "ok");
+                    connState.textContent = liveMode ? "online" : "degraded";
+                    if (!liveMode) connDot.classList.add("off");
+                    try {
+                        const sys = await api("/system/status");
+                        const mode = sys.band_configured ? "band" : "local engine";
+                        connInfo.textContent = `${mode} · ${sys.data_sources} source${sys.data_sources !== 1 ? "s" : ""} · ${sys.cached_plans || 0} plans cached`;
+                    } catch (_) {}
+                    try {
+                        const sources = await api("/data-sources");
+                        if (Array.isArray(sources) && sources.length) {
+                            dsEl.innerHTML = sources.map(s => `<option value="${s.id}">${s.display_name}${s.is_sample ? " (sample)" : ""}</option>`).join("");
+                        }
+                    } catch (_) {}
+                } catch (err) {
+                    liveMode = false; connState.textContent = "offline demo"; connDot.classList.add("off");
+                    connInfo.textContent = "no backend · self-contained preview";
+                }
+            }
+
+            // ---- run investigation -----------------------------------------------
+            async function runQuestion(q) {
+                running = true; enter.disabled = true; updateEnterLabel();
+                railTitle.innerHTML = `Live session <b>streaming…</b>`;
+                bootMsg.textContent = "Convening the council…"; bootFill.style.width = "6%"; bootPct.textContent = "—";
+                activatePipelineStage("planning");  // immediately show planning as active
+                try {
+                    const inv = await api("/investigations", {
+                        method: "POST",
+                        body: JSON.stringify({ question: q, data_source_id: dsEl.value || null })
+                    });
+                    activeInvestigation = inv.id;
+                    feedLine("sup", "you", q);
+                    streamRoom(inv.id);
+                } catch (err) {
+                    running = false; bootMsg.textContent = "Could not start — " + err.message;
+                    bootFill.classList.add("bad"); enter.disabled = false; updateEnterLabel();
+                }
+            }
+
+            function streamRoom(id) {
+                const es = new EventSource(API_BASE + "/rooms/" + id + "/stream");
+                let count = 0;
+                es.addEventListener("message", ev => {
+                    let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
+                    const node  = ROLE2NODE[m.sender] || "sup";
+                    const tnode = ROLE2NODE[m.target];
+
+                    // Animate 3D node
+                    emitSignal(node, tnode || node, byId[node] ? byId[node].color : C.teal);
+
+                    // Advance workflow pipeline
+                    const stageId = ROLE2STAGE[m.sender] || null;
+                    if (stageId) activatePipelineStage(stageId);
+
+                    // Live feed
+                    feedLine(node, (m.sender || "agent").replace(/_/g, " "), m.summary || m.kind || "…");
+
+                    count++;
+                    const pct = Math.min(96, 8 + count * 8);
+                    bootFill.style.width = pct + "%";
+                    bootMsg.textContent = `${(m.sender || "agent").replace(/_/g, " ")} → ${(m.target || "").replace(/_/g, " ") || "…"}`;
+                });
+                es.addEventListener("status", ev => {
+                    let s = {}; try { s = JSON.parse(ev.data); } catch (_) {}
+                    es.close(); running = false;
+                    bootFill.style.width = "100%"; bootPct.textContent = "done";
+                    bootMsg.textContent = s.status === "completed"
+                        ? "Council reached a decision"
+                        : ("Session " + (s.status || "ended"));
+                    railTitle.innerHTML = `Session · <b>${s.status || "done"}</b>`;
+                    completePipeline();
+                    enter.disabled = false; enterLabel.textContent = "Enter dashboard";
+                });
+                es.addEventListener("error", () => {
+                    es.close(); running = false; enter.disabled = false;
+                    bootMsg.textContent = "Stream ended"; updateEnterLabel();
+                });
+            }
+
+            // ---- navigation to dashboard -----------------------------------------
+            let leaving = false;
+            function gotoDashboard() {
+                if (leaving) return; leaving = true;
+                // Set cookie so Next.js middleware lets the user through to the dashboard
+                document.cookie = "quorum_entered=1; path=/; max-age=604800; SameSite=Lax";
+                enterLabel.textContent = "Entering"; document.body.classList.add("leaving");
+                const detail = {
+                    investigationId: activeInvestigation, sessionToken,
+                    question: questionEl.value.trim() || null, dataSourceId: dsEl.value || null
+                };
+                const start = performance.now(), from = camera.position.z;
+                (function fly(now) {
+                    const k = Math.min(1, (now - start) / 900), e2 = 1 - Math.pow(1 - k, 3);
+                    camera.position.z = from - (from + 2.5) * e2; camera.fov = 52 + 18 * e2; camera.updateProjectionMatrix();
+                    if (k < 1) requestAnimationFrame(fly);
+                    else {
+                        window.dispatchEvent(new CustomEvent("quorum:enter", { detail }));
+                        if (DASHBOARD_URL !== undefined) {
+                            const base = DASHBOARD_URL.replace(/\/$/, "");
+                            // Go directly to the investigation if one was run
+                            const target = activeInvestigation
+                                ? (base + "/investigations/" + activeInvestigation)
+                                : (base || "/");
+                            location.href = target;
+                        }
+                    }
+                })(start);
+            }
+
+            enter.addEventListener("click", () => {
+                if (enter.disabled) return;
+                const q = questionEl.value.trim();
+                if (q && liveMode && !activeInvestigation && !running) { runQuestion(q); return; }
+                gotoDashboard();
+            });
+            questionEl.addEventListener("keydown", e => { if (e.key === "Enter" && !enter.disabled) enter.click(); });
+            document.getElementById("skip").addEventListener("click", gotoDashboard);
+            document.getElementById("skip").addEventListener("keydown", e => { if (e.key === "Enter") gotoDashboard(); });
+
+            // ---- clock + resize --------------------------------------------------
+            const clock = document.getElementById("clock");
+            (function tick() { if (clock) clock.textContent = new Date().toLocaleTimeString([], { hour12: false }); setTimeout(tick, 1000); })();
+            function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+            window.addEventListener("resize", resize); resize();
+
+            // ---- render loop -----------------------------------------------------
+            const mouse = { x: 0, y: 0, tx: 0, ty: 0 };
+            window.addEventListener("pointermove", e => { mouse.tx = (e.clientX / innerWidth - .5); mouse.ty = (e.clientY / innerHeight - .5); });
+            const clock3 = new THREE.Clock();
+            function ease(x) { return x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2; }
+            function step(dt, t) {
+                AGENTS.forEach(a => {
+                    const n = byId[a.id];
+                    n.ignited += (n.target - n.ignited) * Math.min(1, dt * 3.2);
+                    n.flash = Math.max(0, n.flash - dt * 1.6);
+                    const breathe = 0.6 + 0.4 * Math.sin(t * 1.4 + n.grp.position.x);
+                    n.halo.material.opacity = Math.min(1.4, n.ignited * (a.core ? 0.95 : 0.6) * breathe + n.flash * 0.9);
+                    n.mesh.scale.setScalar(0.7 + 0.3 * n.ignited + n.flash * 0.4);
+                    const s = (0.9 + 0.18 * n.ignited * breathe) * (1 + n.flash * 0.5);
+                    n.halo.scale.set((a.core ? 3.6 : 2.2) * s, (a.core ? 3.6 : 2.2) * s, 1);
+                    if (n.ring) { n.ring.rotation.z += dt * 0.4; n.ring.material.opacity = 0.12 + 0.28 * n.ignited; }
+                });
+                edgeObjs.forEach(eo => {
+                    const lit = Math.min(eo.A.ignited, eo.B.ignited);
+                    eo.on += (lit - eo.on) * Math.min(1, dt * 2.5);
+                    eo.line.material.opacity = (eo.gov ? 0.16 : 0.10) * eo.on * (0.7 + 0.3 * Math.sin(t * 2 + eo.A.grp.position.y));
+                });
+                pulses.forEach(p => {
+                    const lit = Math.min(p.A.ignited, p.B.ignited);
+                    p.active += (lit - p.active) * Math.min(1, dt * 2.0); p.t += dt * p.speed; if (p.t > 1) { p.t -= 1; p.speed = 0.16 + Math.random() * 0.16; }
+                    const a = p.A.grp.position, b = p.B.grp.position, k = ease(p.t);
+                    p.sp.position.set(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k);
+                    const fade = Math.sin(p.t * Math.PI); p.sp.material.opacity = p.active * fade * (p.gov ? 0.95 : 0.8); p.sp.scale.setScalar(0.45 + 0.35 * fade);
+                });
+                for (let i = signals.length - 1; i >= 0; i--) {
+                    const g = signals[i]; g.t += dt * g.speed;
+                    const a = g.A.grp.position, b = g.B.grp.position, k = ease(Math.min(1, g.t));
+                    g.sp.position.set(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k);
+                    g.sp.material.opacity = Math.max(0, 1 - g.t); g.sp.scale.setScalar(0.9 + 0.5 * Math.sin(Math.min(1, g.t) * Math.PI));
+                    if (g.t >= 1) { scene.remove(g.sp); g.sp.material.dispose(); signals.splice(i, 1); }
+                }
+                mouse.x += (mouse.tx - mouse.x) * 0.05; mouse.y += (mouse.ty - mouse.y) * 0.05;
+                nodeGroup.rotation.y = t * 0.05 + mouse.x * 0.5; nodeGroup.rotation.x = Math.sin(t * 0.18) * 0.06 - mouse.y * 0.35;
+                edgeObjs.forEach(eo => eo.line.rotation.copy(nodeGroup.rotation));
+                pulses.forEach(p => p.sp.position.applyEuler(nodeGroup.rotation));
+                signals.forEach(g => g.sp.position.applyEuler(nodeGroup.rotation));
+                camera.position.x += (mouse.x * 1.2 - camera.position.x) * 0.04;
+                camera.position.y += (0.2 - mouse.y * 0.9 - camera.position.y) * 0.04; camera.lookAt(0, 0, 0);
+                renderer.render(scene, camera);
+            }
+            function frame() { const dt = Math.min(clock3.getDelta(), 0.05); step(dt, clock3.elapsedTime); requestAnimationFrame(frame); }
+            function renderOnce() { step(0.016, clock3.elapsedTime); }
+
+            // ---- start -----------------------------------------------------------
+            (async function start() {
+                await connect();
+                if (REDUCED) {
+                    AGENTS.forEach(a => { byId[a.id].ignited = 1; byId[a.id].target = 1; });
+                    edgeObjs.forEach(eo => eo.on = 1);
+                    PIPELINE_STAGES.forEach(s => s.el.classList.add("ready"));
+                    ready(); renderOnce();
+                } else {
+                    requestAnimationFrame(frame);
+                    setTimeout(() => igniteStep(0, ready), 700);
+                }
+            })();
+
+        })();
+    </script>
+</body>
+
+</html>

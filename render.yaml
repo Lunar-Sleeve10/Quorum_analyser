@@ -1,0 +1,49 @@
+# render.yaml — Quorum backend deployment blueprint.
+# One-click deploy: https://dashboard.render.com/select-repo
+# Frontend (quorum-ui) is deployed separately on Vercel.
+
+databases:
+  - name: quorum-db
+    plan: free
+    databaseName: quorum
+    user: quorum
+
+services:
+  - type: web
+    name: quorum-api
+    runtime: python
+    plan: free
+    rootDir: quorum
+    buildCommand: pip install -r requirements/backend.txt -r requirements.txt
+    preDeployCommand: python -m alembic upgrade head
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: quorum-db
+          property: connectionString
+      - key: CREDENTIAL_ENCRYPTION_KEY
+        generateValue: true
+      # Set to your Vercel app URL after first deploy, e.g. https://quorum.vercel.app
+      - key: FRONTEND_ORIGIN
+        value: "*"
+      # LLM provider: groq | aiml | featherless | openai | ollama
+      - key: LLM_BACKEND
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: AIML_API_KEY
+        sync: false
+      - key: AIML_BASE_URL
+        value: https://api.aimlapi.com/v1
+      - key: FEATHERLESS_API_KEY
+        sync: false
+      - key: FEATHERLESS_BASE_URL
+        value: https://api.featherless.ai/v1
+      - key: MAX_INVESTIGATIONS_PER_SESSION
+        value: "3"
+      - key: MAX_FOLLOWUPS_PER_INVESTIGATION
+        value: "2"
+      - key: LOG_LEVEL
+        value: INFO

@@ -28,6 +28,7 @@ Role = Literal[
     "cost_sentinel",
     "reviewer",
     "guardian",
+    "plan_guardian",
     "reporting_agent",
     "decision_reporter",
     "investigator",
@@ -119,6 +120,11 @@ class Grounding(BaseModel):
     query_pattern: str = ""
     complexity: str = ""
     revision_count: int = 0
+    # Additive: the approved plan's grouping dimensions + subtasks, carried so a
+    # separate-process Cost Sentinel can check SQL plan-compliance. Default empty
+    # ⇒ fully backward compatible.
+    planned_dimensions: list[str] = Field(default_factory=list)
+    subtasks: list[str] = Field(default_factory=list)
 
 
 class CostEstimate(BaseModel):
@@ -185,6 +191,43 @@ class ValidatedResult(BandMessage):
     review_method: ReviewMethod
     revision_applied: bool = False
     grounding: Optional[Grounding] = None   # carried for cross-process hydration
+
+
+# ---------------------------------------------------------------------------
+# Pre-execution / compliance review feedback (additive — feedback only)
+# ---------------------------------------------------------------------------
+
+class PlanReview(BandMessage):
+    """Plan Guardian -> Supervisor: structured critique of the Planner's plan.
+
+    Feedback ONLY. The Guardian never rewrites the plan; the Supervisor decides
+    whether to ask the Planner to re-plan. ``verdict == "revise"`` means the plan
+    is incomplete for the question (missing metrics / dimensions / factors).
+    """
+    verdict: Literal["pass", "revise"]
+    issues: list[str] = Field(default_factory=list)
+    missing_metrics: list[str] = Field(default_factory=list)
+    missing_dimensions: list[str] = Field(default_factory=list)
+    missing_factors: list[str] = Field(default_factory=list)
+    review_method: str = "deterministic"          # deterministic | llm_assisted
+
+
+class SQLComplianceReview(BandMessage):
+    """Cost Sentinel -> Supervisor: does the SQL implement the approved plan?
+
+    This is the PLAN-COMPLIANCE half of the Cost Sentinel (the COST half stays on
+    ``SQLResult.cost_estimate``, unchanged). Feedback ONLY — the Sentinel never
+    rewrites SQL. ``compliant == False`` means the Supervisor should ask the SQL
+    Engineer to revise (bounded by ``sql_revision_count``). ``cost_flagged``
+    surfaces the existing cost concerns so the Supervisor can act on cost too.
+    """
+    compliant: bool
+    missing_dimensions: list[str] = Field(default_factory=list)
+    missing_metrics: list[str] = Field(default_factory=list)
+    issues: list[str] = Field(default_factory=list)
+    revision_hint: str = ""
+    cost_flagged: bool = False
+    cost_notes: list[str] = Field(default_factory=list)
 
 
 class FinalReport(BandMessage):

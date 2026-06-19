@@ -53,3 +53,21 @@ quorum checking/
 combined_code.txt
 tree.txt
 frontend-next/
+db_dump.txt
+stuff.py
+inspect_db.py
+fix_imports.py
+fix_sample_paths.py
+
+# =====================
+# Docs — keep only AIML_INTEGRATION.md and BAND_INTEGRATION.md
+# =====================
+README.md
+DEMO.md
+GETTING_STARTED.md
+FRONTEND_GETTING_STARTED.md
+PHASE1_BACKEND.md
+PHASE2_3.md
+POSITIONING.md
+QUORUM_V2_INDEX.md
+SETUP_NEW_CREDENTIALS.md

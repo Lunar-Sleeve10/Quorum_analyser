@@ -1,0 +1,6 @@
+{
+  "rootDirectory": "quorum-ui",
+  "framework": "nextjs",
+  "buildCommand": "pnpm build",
+  "installCommand": "pnpm install"
+}

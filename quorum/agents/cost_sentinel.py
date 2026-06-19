@@ -91,3 +91,105 @@ class CostSentinelAgent(BaseAgent[SQLResult, SQLResult]):
             est.engine, est.risk_level, est.within_budget, est.method,
         )
         return message
+
+    # ==================================================================
+    # NEW — Plan-compliance review (spec: Cost Sentinel responsibility #1).
+    # Verifies the generated SQL actually implements the APPROVED PLAN, and
+    # repackages the existing cost findings. Returns STRUCTURED FEEDBACK ONLY;
+    # the Sentinel never rewrites SQL. The Supervisor decides on any retry.
+    # ==================================================================
+    def review_compliance(self, task, sql_result: SQLResult):
+        """Compare SQL against the approved SchemaGroundedTask + run cost gate.
+
+        `task` is the SchemaGroundedTask the Planner approved. Returns an
+        SQLComplianceReview (see pipeline/models.py).
+        """
+        planned_dims: list[str] = []
+        for sel in getattr(task, "selections", []) or []:
+            for col in getattr(sel, "columns", []) or []:
+                planned_dims.append(str(col))
+        subtasks = list(getattr(task, "subtasks", []) or [])
+        return self.review_compliance_dims(planned_dims, subtasks, sql_result)
+
+    def review_compliance_dims(self, planned_dimensions, subtasks, sql_result: SQLResult):
+        """Dimensions-based compliance check (used by the distributed Band path,
+        where the full SchemaGroundedTask object is not in scope but its planned
+        dimensions/subtasks are carried on SQLResult.grounding)."""
+        from pipeline.models import SQLComplianceReview, make_envelope
+        from config import BandConfig
+
+        sql = (sql_result.sql_query or "")
+        sql_lower = sql.lower()
+        planned_dims = [str(d) for d in (planned_dimensions or [])]
+        subtask_blob = " ".join(subtasks or []).lower()
+
+        # --- 1) Plan compliance: every planned dimension must appear in the SQL.
+        missing_dimensions: list[str] = []
+        for dim in planned_dims:
+            d = dim.lower()
+            if d and d not in sql_lower:
+                if d in subtask_blob or len(planned_dims) <= 6:
+                    missing_dimensions.append(dim)
+
+        issues: list[str] = []
+        if missing_dimensions:
+            issues.append(
+                "SQL does not implement planned dimension(s): "
+                f"{', '.join(sorted(set(missing_dimensions)))}."
+            )
+
+        # --- 2) Cost review (reuse the already-computed estimate if present).
+        est = getattr(sql_result, "cost_estimate", None)
+        cost_notes: list[str] = []
+        cost_flagged = False
+        if "select *" in sql_lower:
+            cost_flagged = True
+            cost_notes.append("SELECT * pulls unnecessary columns.")
+        if est is not None:
+            if est.risk_level == "high":
+                cost_flagged = True
+                cost_notes.append(f"High cost risk (engine={est.engine}).")
+            if est.within_budget is False:
+                cost_flagged = True
+                cost_notes.append("Estimated cost exceeds budget.")
+            if est.full_scan_tables:
+                cost_flagged = True
+                cost_notes.append(
+                    "Full scan of: " + ", ".join(est.full_scan_tables) + "."
+                )
+
+        compliant = not missing_dimensions
+        hint = ""
+        if not compliant:
+            hint = (
+                "Regenerate the SQL so it groups/aggregates by the planned "
+                f"dimension(s): {', '.join(sorted(set(missing_dimensions)))}."
+            )
+        elif cost_flagged:
+            hint = (
+                "Query is plan-compliant but expensive: "
+                + " ".join(cost_notes)
+                + " Add a selective WHERE filter, drop SELECT *, or aggregate earlier."
+            )
+
+        review = SQLComplianceReview(
+            envelope=make_envelope(
+                session_id=sql_result.envelope.session_id,
+                from_role=self.role,                 # "cost_sentinel"
+                channel=BandConfig.CHANNEL_TASKS,
+                topic=BandConfig.TOPIC_REVIEW,
+                to_role="supervisor",
+            ),
+            compliant=compliant,
+            missing_dimensions=sorted(set(missing_dimensions)),
+            issues=issues,
+            revision_hint=hint,
+            cost_flagged=cost_flagged,
+            cost_notes=cost_notes,
+        )
+        self._emit(sql_result.envelope.session_id, event_type="tool_call", detail={
+            "role": self.role, "event": "compliance_reviewed",
+            "compliant": compliant, "cost_flagged": cost_flagged,
+            "missing_dimensions": review.missing_dimensions,
+        })
+        return review

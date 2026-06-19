@@ -128,3 +128,123 @@
     @apply font-sans;
   }
 }
+
+/* ====================================================================
+   Animated Background — floating gradient blobs
+   Pure CSS @keyframes, GPU-composited (transform + opacity only).
+   ==================================================================== */
+
+.animated-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.15;
+  will-change: transform;
+}
+
+.dark .animated-blob {
+  opacity: 0.08;
+}
+
+/* Blob 1: Indigo → Violet — slow elliptical drift */
+.animated-blob-1 {
+  width: 420px;
+  height: 420px;
+  background: linear-gradient(135deg, oklch(0.55 0.24 270), oklch(0.55 0.24 300));
+  top: -80px;
+  left: -60px;
+  animation: blob-drift-1 20s ease-in-out infinite;
+}
+
+/* Blob 2: Teal → Cyan — counter-drift */
+.animated-blob-2 {
+  width: 360px;
+  height: 360px;
+  background: linear-gradient(135deg, oklch(0.65 0.18 185), oklch(0.65 0.18 200));
+  top: 60px;
+  right: -40px;
+  animation: blob-drift-2 25s ease-in-out infinite;
+}
+
+/* Blob 3: Fuchsia → Rose — pulsate */
+.animated-blob-3 {
+  width: 300px;
+  height: 300px;
+  background: linear-gradient(135deg, oklch(0.60 0.24 330), oklch(0.60 0.20 10));
+  bottom: -60px;
+  left: 30%;
+  animation: blob-drift-3 18s ease-in-out infinite;
+}
+
+/* Blob 4: Amber accent — subtle float */
+.animated-blob-4 {
+  width: 240px;
+  height: 240px;
+  background: linear-gradient(135deg, oklch(0.70 0.16 80), oklch(0.65 0.18 60));
+  top: 40%;
+  left: 15%;
+  animation: blob-drift-4 22s ease-in-out infinite;
+}
+
+@keyframes blob-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25%      { transform: translate(60px, 30px) scale(1.05); }
+  50%      { transform: translate(30px, 60px) scale(0.95); }
+  75%      { transform: translate(-20px, 40px) scale(1.02); }
+}
+
+@keyframes blob-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(-50px, 40px) scale(1.08); }
+  66%      { transform: translate(-30px, -30px) scale(0.92); }
+}
+
+@keyframes blob-drift-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(40px, -40px) scale(1.12); }
+}
+
+@keyframes blob-drift-4 {
+  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  33%      { transform: translate(30px, -20px) scale(1.06) rotate(3deg); }
+  66%      { transform: translate(-20px, 30px) scale(0.94) rotate(-2deg); }
+}
+
+/* ====================================================================
+   Shimmer — loading placeholder sweep
+   ==================================================================== */
+
+.shimmer-block {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer-block::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    oklch(0.95 0 0 / 60%) 40%,
+    oklch(0.95 0 0 / 60%) 60%,
+    transparent 100%
+  );
+  animation: shimmer-sweep 1.8s ease-in-out infinite;
+  will-change: transform;
+}
+
+.dark .shimmer-block::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    oklch(0.30 0 0 / 40%) 40%,
+    oklch(0.30 0 0 / 40%) 60%,
+    transparent 100%
+  );
+}
+
+@keyframes shimmer-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}

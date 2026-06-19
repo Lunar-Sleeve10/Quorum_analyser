@@ -73,6 +73,13 @@ class SessionContext:
     revision_count: int = 0
     clarification_count: int = 0
 
+    # NEW — independent Supervisor-owned budgets for the two new review gates.
+    # These MUST NOT alias revision_count (the existing Reviewer's SQL-correctness
+    # budget). Plan review and SQL plan-compliance each get their own counter so
+    # the existing reviewer budget is never consumed by the new loops.
+    plan_revision_count: int = 0
+    sql_revision_count: int = 0
+
     # Locally-stored Plotly figure objects, keyed (referenced via chart_spec_ref)
     artifacts: dict[str, Any] = field(default_factory=dict)
 

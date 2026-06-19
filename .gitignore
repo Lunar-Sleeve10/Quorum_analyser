@@ -96,3 +96,18 @@ quorum-ui/quorum ui _ check/
 .vercel
 
 combined_code.txt
+
+# =====================
+# Junk / scratch files
+# =====================
+quorum/db_dump.txt
+quorum/stuff.py
+quorum/inspect_db.py
+quorum/fix_imports.py
+quorum/fix_sample_paths.py
+requirements1.txt
+
+# =====================
+# Redundant cover copy
+# =====================
+quorum-ui/quorum-cover.html

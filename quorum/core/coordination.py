@@ -29,12 +29,13 @@ from agents.planner import PlannerAgent
 from agents.sql_engineer import SQLEngineerAgent
 from agents.cost_sentinel import CostSentinelAgent
 from agents.governance_guardian import GovernanceGuardianAgent
+from agents.plan_guardian import PlanGovernanceGuardianAgent
 from agents.reporting import VisualizationReportingAgent
 from agents.investigator import FactorInvestigatorAgent
 from agents.adjudicator import AdjudicatorAgent
-from pipeline.models import AgentEvent, RevisionRequest, ValidatedResult
+from pipeline.models import AgentEvent, RevisionRequest, ValidatedResult, make_envelope
 from pipeline.session_context import context_store
-from config import BandConfig, DatabaseType, ReviewMethod, settings
+from config import BandConfig, DatabaseType, IssueType, ReviewMethod, settings
 from core.cache import SchemaCache
 from core.database import make_adapter
 from core.memory import Memory, schema_fingerprint
@@ -44,6 +45,13 @@ from core.viz import build_chart, investigation_chart
 from models.state import DatabaseConfig
 
 logger = logging.getLogger(__name__)
+
+# Independent, Supervisor-owned budgets for the two new review gates. Kept here
+# (not in the external config) to keep the change inside the provided files.
+# Setting either to 0 turns the corresponding gate advisory-only (it records a
+# caveat but never triggers a re-plan / re-generation).
+MAX_PLAN_REVISIONS = 1
+MAX_SQL_REVISIONS = 1
 
 
 class _Collector(TelemetrySink):
@@ -114,6 +122,48 @@ class AnalyticsEngine:
             plan.mark("plan", "done", detail="; ".join(plan.notes))
             trace.append(f"Planner: intent={plan.intent}. " + " ".join(plan.notes))
 
+            # --- Supervisor-owned PLAN-REVIEW gate (pre-execution) ------------
+            # The Plan Guardian critiques the plan; the SUPERVISOR decides whether
+            # to ask the Planner (still the plan owner) to re-plan. Bounded by the
+            # independent plan_revision_count budget — never touches revision_count.
+            plan_guardian = PlanGovernanceGuardianAgent(llm_router=self.router, telemetry=sink)
+
+            def _plan_review(_planned):
+                return plan_guardian.review(
+                    session_id=session_id, question=question,
+                    intent=_planned.plan.intent,
+                    query_pattern=_planned.plan.query_pattern,
+                    task=_planned.task, factors=_planned.plan.factors,
+                    allow_llm=(ctx.plan_revision_count < MAX_PLAN_REVISIONS),
+                )
+
+            plan.mark("plan_review", "running")
+            review = _plan_review(planned)
+            while review.verdict == "revise" and ctx.plan_revision_count < MAX_PLAN_REVISIONS:
+                ctx.plan_revision_count += 1
+                crit = "; ".join(review.issues + review.missing_dimensions
+                                 + review.missing_factors + review.missing_metrics)
+                plan.note(f"Plan Guardian: {crit}")
+                trace.append(f"Plan review round {ctx.plan_revision_count}: Guardian "
+                             f"flagged plan gaps; Supervisor asking Planner to re-plan.")
+                try:
+                    planned = planner.plan(session_id=session_id, question=question,
+                                           adapter=ctx.adapter, db_path=db_path,
+                                           db_type=db_type, plan_feedback=crit)
+                except ClarificationNeeded as cn:
+                    return EngineResult(status="clarification", intent="unclear",
+                                        clarification=cn.request.clarification_message,
+                                        llm_call_count=ctx.total_llm_calls(), trace=trace)
+                plan = planned.plan
+                plan.mark("plan", "done", detail="; ".join(plan.notes))
+                plan.mark("plan_review", "running")
+                review = _plan_review(planned)
+            if review.verdict == "revise":
+                plan.note("Supervisor: plan-review budget exhausted; proceeding with caveat.")
+                trace.append("Supervisor: plan-review budget exhausted; proceeding with a caveat.")
+            plan.mark("plan_review", "done", f"verdict={review.verdict}")
+            # -----------------------------------------------------------------
+
             if planned.investigation is not None:
                 return self._run_diagnostic(ctx, plan, planned.investigation,
                                             sink, narrate_diagnostic, trace)
@@ -143,6 +193,35 @@ class AnalyticsEngine:
         est = sql_result.cost_estimate
         plan.mark("cost", "done", (f"risk={est.risk_level}, within_budget={est.within_budget}"
                                    if est else "estimate unavailable"))
+
+        # --- Supervisor-owned SQL PLAN-COMPLIANCE gate -----------------------
+        # The Cost Sentinel checks that the SQL implements the APPROVED PLAN (and
+        # repackages its cost findings). The SUPERVISOR decides whether to ask the
+        # SQL Engineer (still the SQL owner) to revise. Bounded by the independent
+        # sql_revision_count budget — never touches revision_count.
+        plan.mark("compliance", "running")
+        comp = cost_sentinel.review_compliance(task, sql_result)
+        while (not comp.compliant) and ctx.sql_revision_count < MAX_SQL_REVISIONS:
+            ctx.sql_revision_count += 1
+            plan.note(f"Cost Sentinel (compliance): {'; '.join(comp.issues)}")
+            trace.append(f"Compliance round {ctx.sql_revision_count}: SQL missed a "
+                         f"planned dimension; Supervisor asking SQL Engineer to revise.")
+            rev = RevisionRequest(
+                envelope=make_envelope(
+                    session_id=sql_result.envelope.session_id, from_role="supervisor",
+                    channel=BandConfig.CHANNEL_TASKS, topic=BandConfig.TOPIC_REVISION,
+                    to_role="sql_engineer", revision_count=ctx.sql_revision_count),
+                issue_type=IssueType.OTHER, revision_hint=comp.revision_hint,
+                previous_sql=sql_result.sql_query, must_succeed=True)
+            sql_result = sql_engineer.run_revision(rev)
+            cost_sentinel.run(sql_result)
+            comp = cost_sentinel.review_compliance(task, sql_result)
+        if not comp.compliant:
+            plan.note("Supervisor: SQL plan-compliance budget exhausted; proceeding with caveat.")
+            trace.append("Supervisor: SQL plan-compliance budget exhausted; proceeding with a caveat.")
+        plan.mark("compliance", "done",
+                  f"compliant={comp.compliant}, cost_flagged={comp.cost_flagged}")
+        # ---------------------------------------------------------------------
 
         plan.mark("review", "running")
         outcome = guardian.review(sql_result)
@@ -191,6 +270,8 @@ class AnalyticsEngine:
         report_dict["viz_reason"] = reason
         report_dict["plan"] = plan.to_dict()
         report_dict["trace"] = trace
+        report_dict["plan_revision_count"] = ctx.plan_revision_count
+        report_dict["sql_revision_count"] = ctx.sql_revision_count
 
         # Persist approved plan + insight.
         if not replanned and sql_result.execution_status == "success":

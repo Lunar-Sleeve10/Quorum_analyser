@@ -50,7 +50,8 @@ class PlannerAgent:
         self._orchestrator.telemetry = value
 
     def plan(self, *, session_id: str, question: str, adapter, db_path: str,
-             db_type: str, clarification_count: int = 0) -> PlanResult:
+             db_type: str, clarification_count: int = 0,
+             plan_feedback: str = "") -> PlanResult:
         # Diagnostic gate first — deterministic, no LLM. If it resolves a
         # comparison, we take the investigation branch without grounding SQL.
         inv = None
@@ -70,12 +71,18 @@ class PlannerAgent:
             return PlanResult(plan=plan, investigation=inv)
 
         # Descriptive branch — ground via the orchestrator (1 LLM call).
+        # When the Supervisor supplies reviewer feedback (plan_feedback), fold it
+        # into the question so the Planner — which remains the OWNER of the plan —
+        # can broaden its grounding. Empty feedback ⇒ identical to before.
+        grounded_question = question if not plan_feedback else (
+            f"{question}\n\n[Reviewer feedback to address: {plan_feedback}]"
+        )
         user_query = UserQuery(
             envelope=make_envelope(
                 session_id=session_id, from_role="user",
                 channel=BandConfig.CHANNEL_CONTROL, topic=BandConfig.TOPIC_CONTROL,
                 to_role="orchestrator"),
-            question=question, db_path=db_path, db_type=db_type,
+            question=grounded_question, db_path=db_path, db_type=db_type,
             clarification_count=clarification_count,
         )
         task = self._orchestrator.run(user_query)   # may raise ClarificationNeeded

@@ -30,6 +30,7 @@ from agents.adjudicator import AdjudicatorAgent
 from agents.orchestrator import ClarificationNeeded
 from agents.cost_sentinel import CostSentinelAgent
 from agents.governance_guardian import GovernanceGuardianAgent
+from agents.plan_guardian import PlanGovernanceGuardianAgent
 from agents.investigator import FactorInvestigatorAgent
 from agents.planner import PlannerAgent
 from agents.reporting import VisualizationReportingAgent
@@ -41,7 +42,7 @@ from pipeline.models import (
     UserQuery, ValidatedResult, make_envelope,
 )
 from pipeline.session_context import context_store
-from config import BandConfig, DatabaseType, settings
+from config import BandConfig, DatabaseType, IssueType, settings
 from core import investigation
 from core.investigation import inv_from_dict, inv_to_dict
 from core.cache import SchemaCache
@@ -242,6 +243,14 @@ class QuorumBandAdapter(SimpleAdapter):  # type: ignore[misc]
     # Supervisor
     # ------------------------------------------------------------------
     async def _on_supervisor(self, decoded, tools, room_id, ctx) -> None:
+        # --- Supervisor-owned SQL plan-compliance DECISION ------------------
+        # A non-compliant SQLResult is routed here by the Cost Sentinel. The
+        # Supervisor (the loop owner) decides whether to ask the SQL Analyst to
+        # revise (bounded by sql_revision_count) or to proceed to governance.
+        if isinstance(decoded.message, SQLResult):
+            await self._decide_compliance(decoded.message, tools, room_id, ctx)
+            return
+
         if decoded.kind != "RawText" or not decoded.raw or not decoded.raw.text:
             return
         question = decoded.raw.text
@@ -259,6 +268,33 @@ class QuorumBandAdapter(SimpleAdapter):  # type: ignore[misc]
         planned = self._agent.plan(session_id=room_id, question=question,
                                    adapter=ctx.adapter, db_path=db_conn,
                                    db_type=db_type_val)
+
+        # --- Supervisor-owned PLAN-REVIEW gate (pre-execution, in-process) ---
+        # The Plan Guardian critiques; the Supervisor decides whether to ask the
+        # Planner to re-plan. Running it inside the supervisor process keeps the
+        # loop owner singular and avoids any agent->agent loop in the room.
+        plan_guardian = PlanGovernanceGuardianAgent(llm_router=getattr(self._agent, "router", None))
+        review = plan_guardian.review(
+            session_id=room_id, question=question, intent=planned.plan.intent,
+            query_pattern=planned.plan.query_pattern, task=planned.task,
+            factors=planned.plan.factors,
+            allow_llm=(ctx.plan_revision_count < 1))
+        while review.verdict == "revise" and ctx.plan_revision_count < 1:
+            ctx.plan_revision_count += 1
+            crit = "; ".join(review.issues + review.missing_dimensions
+                             + review.missing_factors + review.missing_metrics)
+            await self._post(tools, room_id,
+                             f"Plan Guardian flagged plan gaps; Supervisor re-planning. {crit}",
+                             target_role="dashboard")
+            planned = self._agent.plan(session_id=room_id, question=question,
+                                       adapter=ctx.adapter, db_path=db_conn,
+                                       db_type=db_type_val, plan_feedback=crit)
+            review = plan_guardian.review(
+                session_id=room_id, question=question, intent=planned.plan.intent,
+                query_pattern=planned.plan.query_pattern, task=planned.task,
+                factors=planned.plan.factors, allow_llm=False)
+        # ---------------------------------------------------------------------
+
         plan = planned.plan
         plan_text = _plan_text(plan)
 
@@ -299,17 +335,61 @@ class QuorumBandAdapter(SimpleAdapter):  # type: ignore[misc]
         await self._handoff(tools, room_id, task, "sql_analyst", detail)
 
     # ------------------------------------------------------------------
+    async def _decide_compliance(self, sql_result, tools, room_id, ctx) -> None:
+        """Supervisor decides the SQL plan-compliance retry (Band path)."""
+        g = sql_result.grounding
+        dims = list(g.planned_dimensions) if g else []
+        subtasks = list(g.subtasks) if g else []
+        review = CostSentinelAgent().review_compliance_dims(dims, subtasks, sql_result)
+        if (not review.compliant) and ctx.sql_revision_count < 1:
+            ctx.sql_revision_count += 1
+            rev = RevisionRequest(
+                envelope=make_envelope(session_id=room_id, from_role="supervisor",
+                                       channel=BandConfig.CHANNEL_TASKS,
+                                       topic=BandConfig.TOPIC_REVISION, to_role="sql_analyst",
+                                       revision_count=ctx.sql_revision_count),
+                issue_type=IssueType.OTHER, revision_hint=review.revision_hint,
+                previous_sql=sql_result.sql_query, must_succeed=True)
+            await self._handoff(tools, room_id, rev, "sql_analyst",
+                                f"Plan-compliance: {'; '.join(review.issues)} — please revise.")
+            return
+        # Compliant (or budget exhausted) -> resume normal flow into governance.
+        note = ("Plan-compliant; proceeding to governance review."
+                if review.compliant
+                else "Compliance budget exhausted; proceeding with caveat.")
+        await self._handoff(tools, room_id, sql_result, "guardian", note)
+
+    # ------------------------------------------------------------------
     async def _on_sql_analyst(self, decoded, tools, room_id, ctx) -> None:
         m = decoded.message
         if isinstance(m, SchemaGroundedTask):
             result = self._agent.run(m)
+            dims = [c for sel in m.selections for c in (sel.columns or [])]
+            # Persist plan grounding in THIS process so a later revision (which
+            # arrives as a RevisionRequest without the task) can re-attach it.
+            ctx.put_artifact(f"grounding:{room_id}", {
+                "dims": dims, "subtasks": list(m.subtasks),
+                "nq": m.normalized_question, "pattern": m.query_pattern,
+                "complexity": str(getattr(m.complexity, "value", m.complexity)),
+            })
             result.grounding = Grounding(
                 normalized_question=m.normalized_question,
                 query_pattern=m.query_pattern,
                 complexity=str(getattr(m.complexity, "value", m.complexity)),
-                revision_count=m.envelope.revision_count)
+                revision_count=m.envelope.revision_count,
+                planned_dimensions=dims, subtasks=list(m.subtasks))
         elif isinstance(m, RevisionRequest):
             result = self._agent.run_revision(m)
+            # Re-attach the carried plan grounding so the compliance gate can run
+            # again on the revised SQL.
+            saved = ctx.get_artifact(f"grounding:{room_id}") or {}
+            result.grounding = Grounding(
+                normalized_question=saved.get("nq", ""),
+                query_pattern=saved.get("pattern", ""),
+                complexity=saved.get("complexity", ""),
+                revision_count=m.envelope.revision_count,
+                planned_dimensions=list(saved.get("dims", [])),
+                subtasks=list(saved.get("subtasks", [])))
         else:
             return
         await self._handoff(tools, room_id, result, "cost_sentinel",
@@ -318,11 +398,14 @@ class QuorumBandAdapter(SimpleAdapter):  # type: ignore[misc]
     async def _on_cost_sentinel(self, decoded, tools, room_id, ctx) -> None:
         if not isinstance(decoded.message, SQLResult):
             return
-        enriched = self._agent.run(decoded.message)
+        enriched = self._agent.run(decoded.message)   # cost estimate (unchanged)
         est = enriched.cost_estimate
         detail = (f"Cost reviewed: risk={est.risk_level}, within_budget={est.within_budget}."
                   if est else "Cost estimate unavailable.")
-        await self._handoff(tools, room_id, enriched, "guardian", detail)
+        # Route to the SUPERVISOR, which owns the plan-compliance retry decision.
+        # (The Cost Sentinel critiques; the Supervisor decides — no cost->analyst
+        # direct loop.)
+        await self._handoff(tools, room_id, enriched, "supervisor", detail)
 
     async def _on_guardian(self, decoded, tools, room_id, ctx) -> None:
         if not isinstance(decoded.message, SQLResult):
