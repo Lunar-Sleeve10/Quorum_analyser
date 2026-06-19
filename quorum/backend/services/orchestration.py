@@ -38,6 +38,13 @@ def band_available() -> bool:
     try:
         from core.band_bridge import BandBridge  # noqa: F401
         from config import settings
+        import os
+        # Respect the USE_BAND env var — allows disabling Band mode even when
+        # DASHBOARD_API_KEY is present (useful for local dev / testing).
+        use_band = os.getenv("USE_BAND", "").strip().lower()
+        if use_band in ("false", "0", "no", "off"):
+            logger.info("Band disabled via USE_BAND environment variable.")
+            return False
     except Exception as exc:
         logger.warning("Band unavailable: import of band_bridge failed: %r", exc)
         return False
