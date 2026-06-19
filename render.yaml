@@ -58,6 +58,22 @@ services:
       # Groq no longer used by default; key optional.
       - key: GROQ_API_KEY
         sync: false
+      # --- Band (distributed multi-agent rooms) ---------------------------
+      # band_available() == true only when DASHBOARD_API_KEY is set; that flag
+      # is what routes investigations to the Band room path (_run_band) instead
+      # of the in-process engine. Set these SECRETS in the dashboard.
+      # ALSO REQUIRED (dashboard, NOT this file): upload agent_config.yaml as a
+      # Secret File mounted at quorum/agent_config.yaml — it holds live per-agent
+      # Band API keys and must never be committed to git.
+      - key: DASHBOARD_API_KEY
+        sync: false
+      - key: DASHBOARD_AGENT_ID
+        sync: false
+      - key: BAND_REST_URL
+        value: https://app.band.ai
+      # Optional: pin a fixed room instead of auto-creating per (session,db).
+      - key: BAND_ROOM_ID
+        sync: false
       - key: MAX_INVESTIGATIONS_PER_SESSION
         value: "3"
       - key: MAX_FOLLOWUPS_PER_INVESTIGATION
