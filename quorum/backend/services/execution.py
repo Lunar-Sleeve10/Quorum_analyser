@@ -504,6 +504,16 @@ def _run_band(db, inv) -> None:
         session_id=inv.session_id,
         data_source_id=inv.data_source_id,
     )
+    # Persist the SessionRoom registry NOW, before any step that can raise
+    # (e.g. _db_config_for). Otherwise a later failure rolls back the room
+    # registration and the next investigation mints ANOTHER room — the "random
+    # rooms + incomplete investigations" symptom. Committing here guarantees the
+    # (session, data_source) -> room mapping survives for reuse.
+    db.commit()
+    logger.info(
+        "Band room resolved for investigation=%s session=%s data_source=%s -> room=%s",
+        inv.id, inv.session_id, inv.data_source_id, room_info.id,
+    )
 
     # Resolve the database config for this investigation's data source and
     # embed it in shared_context.  Band agents read this dict instead of
