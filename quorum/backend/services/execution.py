@@ -546,10 +546,19 @@ def _run_band(db, inv) -> None:
             db.commit()                       # flush so the live stream emits them
             last_change = time.time()
 
-        # Best-effort structured report (only reachable when the API and agents
-        # share a filesystem, e.g. local/co-located runs).
+        # Structured report. Primary source is the Room row in shared Postgres
+        # (written by the agents worker via _save_run); fall back to the local
+        # filesystem run-store for co-located runs.
         if record is None:
-            record = newest_run_after(t0, room_id=room_info.id) or newest_run_after(t0)
+            try:
+                db.refresh(room)
+            except Exception:
+                logger.debug("room refresh failed", exc_info=True)
+            rr = (room.shared_context or {}).get("run_report")
+            if rr:
+                record = {"report": rr}
+            else:
+                record = newest_run_after(t0, room_id=room_info.id) or newest_run_after(t0)
 
         now = time.time()
         if record is not None:

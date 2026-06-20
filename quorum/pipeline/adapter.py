@@ -806,11 +806,34 @@ class QuorumBandAdapter(SimpleAdapter):  # type: ignore[misc]
 
     @staticmethod
     def _save_run(record: dict, room_id: str) -> None:
+        # 1) Filesystem run-store — works when the API and agents share a disk
+        #    (local / co-located runs).
         try:
             from core.run_store import save_run
             save_run(record, room_id=room_id)
         except Exception:
             logger.debug("run-store save skipped", exc_info=True)
+        # 2) Shared store — stash the report on the Room row (Postgres) so the
+        #    API service, a SEPARATE process/host that cannot read this worker's
+        #    filesystem, can render the final result. Keyed by band_room_id.
+        try:
+            from backend.db.base import SessionLocal
+            from backend.db import models as _m
+            db = SessionLocal()
+            try:
+                room = (db.query(_m.Room)
+                        .filter_by(band_room_id=room_id)
+                        .order_by(_m.Room.created_at.desc()).first())
+                if room is not None:
+                    ctx = dict(room.shared_context or {})
+                    ctx["run_report"] = record
+                    room.shared_context = ctx   # reassign so SQLAlchemy tracks the JSON change
+                    db.add(room)
+                    db.commit()
+            finally:
+                db.close()
+        except Exception:
+            logger.debug("run-store DB save skipped", exc_info=True)
 
 
 def _plan_text(plan) -> str:
