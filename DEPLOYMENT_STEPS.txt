@@ -1,0 +1,112 @@
+==============================================================================
+QUORUM ANALYZER — DEPLOYMENT / GO-LIVE STEPS
+Backend: Render (quorum-api)   Frontend: Vercel   Multi-agent: Band
+Branch with all fixes: fix/deployment-llm-routing
+==============================================================================
+
+------------------------------------------------------------------------------
+1. GET THE CODE ONTO RENDER
+------------------------------------------------------------------------------
+Render auto-deploys from `main`, but all fixes are on the branch
+`fix/deployment-llm-routing`. Merge it to main:
+  - GitHub:
+    https://github.com/Lunar-Sleeve10/Quorum_analyser/pull/new/fix/deployment-llm-routing
+    -> open PR -> Merge.
+This triggers a Render build that installs band-sdk and picks up render.yaml.
+
+First deploy after the render.yaml change: in Render use
+  Manual Deploy -> "Clear build cache & deploy"
+so the new env keys from the blueprint get synced.
+
+WATCH THE BUILD LOG: if `band-sdk` is not on public PyPI (private index/git),
+the build fails on that line. If so, report the error to get the right source.
+
+------------------------------------------------------------------------------
+2. SET SECRET VALUES IN RENDER  (quorum-api -> Environment)
+------------------------------------------------------------------------------
+These were added as sync:false, so they exist but are EMPTY until you type them:
+
+  AIML_API_KEY         = <your AI/ML API key>
+  FEATHERLESS_API_KEY  = <your Featherless key>
+  DASHBOARD_API_KEY    = <dashboard agent band_a_... key>   <-- flips band_configured
+  DASHBOARD_AGENT_ID   = <dashboard agent UUID>
+  LLM_BACKEND          = (leave BLANK so per-agent providers apply)
+
+Already set as plain values in render.yaml (no action needed):
+  PLANNER_PROVIDER=aiml, ADJUDICATOR_PROVIDER=aiml
+  SQL_ANALYST_PROVIDER=featherless, GUARDIAN_PROVIDER=featherless, REPORTER_PROVIDER=featherless
+  FEATHERLESS_REASONING_MODEL=openai/gpt-oss-20b
+  FEATHERLESS_SQL_MODEL=Qwen/Qwen2.5-Coder-32B-Instruct
+  BAND_REST_URL, THENVOI_REST_URL, THENVOI_WS_URL
+
+Optional:
+  BAND_ROOM_ID = <id>   (pin a fixed room; leave blank to auto-create per session/db)
+  GROQ_API_KEY          (no longer used by default)
+
+------------------------------------------------------------------------------
+3. UPLOAD THE BAND AGENT CONFIG  (Render -> quorum-api -> Secret Files)
+------------------------------------------------------------------------------
+  - Contents = your local quorum/agent_config.yaml (the 7 agents' UUIDs + keys)
+  - Mount path so the app sees it at:  quorum/agent_config.yaml
+  - NEVER commit this file — it holds live Band API keys.
+
+Without this, band_configured can be true but investigations will error in
+_run_band (missing config).
+
+------------------------------------------------------------------------------
+4. VERCEL (FRONTEND)
+------------------------------------------------------------------------------
+  NEXT_PUBLIC_API_BASE_URL = https://quorum-api-5zwg.onrender.com
+  (NEXT_PUBLIC_* is inlined at build time -> redeploy after setting.)
+  Trailing slash is now tolerated by the code, but cleaner without it.
+
+------------------------------------------------------------------------------
+5. VERIFY (IN ORDER)
+------------------------------------------------------------------------------
+  a) GET https://quorum-api-5zwg.onrender.com/healthz
+       expect: {"status":"ok","database":true,"band_configured":true}
+       If band_configured is still false -> check Render logs for the line
+       "Band unavailable: ..." (says key-empty vs import-failed).
+
+  b) Open the UI -> System page should show  Band: Configured  within ~10s
+     (the status auto-polls every 10s; no manual refresh needed).
+
+  c) Run one real question and watch the Band room:
+       - room is created
+       - supervisor -> sql_analyst -> cost_sentinel -> guardian -> decision_reporter
+       - a vague question's clarification lands on the 'dashboard' participant
+         (no more "No participant matching 'user'")
+       - no repeating "Skipping permanently failed message ... during resync"
+
+------------------------------------------------------------------------------
+NOTES / ARCHITECTURE
+------------------------------------------------------------------------------
+- band_available() is gated SOLELY by DASHBOARD_API_KEY. Setting it routes
+  investigations to the Band path (_run_band); empty -> in-process fallback
+  (_run_local), which is why the UI showed "Local mode".
+- render.yaml deploys only quorum-api (the dashboard/driver that creates rooms
+  and posts questions). The 7 agents run as SEPARATE processes
+  (python -m pipeline.run_agent --role <role>) and must be online for work to
+  happen in the room. If you want them hosted on Render too, that is 7 extra
+  worker services (separate setup).
+- SQLite uploads do NOT persist on Render's ephemeral free tier — use the
+  bundled sample DBs or an external Postgres.
+
+------------------------------------------------------------------------------
+SECURITY
+------------------------------------------------------------------------------
+- Rotate the band_a_... agent keys: they appeared in a chat session.
+- Keep agent_config.yaml out of git (it is gitignored) — Secret File only.
+
+------------------------------------------------------------------------------
+WHAT WAS FIXED ON THE BRANCH (for reference)
+------------------------------------------------------------------------------
+  - SQLite "unable to open database file": clear error + path logging (read-only)
+  - Groq "Invalid API Key" no longer retried (fail fast on auth errors)
+  - 404 //data-sources: strip trailing slash from NEXT_PUBLIC_API_BASE_URL
+  - Band clarification delivered to 'dashboard', not non-existent 'user'
+  - Featherless keeps HF model prefix (openai/gpt-oss-20b); AIML strips it
+  - Provider routing: AIML for Planner/Adjudicator, Featherless for the rest
+  - band_available() now logs WHY it is false
+  - band-sdk[pydantic-ai] installed on the server + THENVOI_* URLs set
+==============================================================================

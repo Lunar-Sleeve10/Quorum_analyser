@@ -44,6 +44,47 @@ def _serialize(inv: models.Investigation) -> dict:
     }
 
 
+def _num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _factor_key(f: dict) -> str:
+    return str(f.get("factor") or f.get("factor_key") or f.get("factor_label") or f.get("label") or "")
+
+
+def _factor_label(f: dict) -> str:
+    return str(f.get("label") or f.get("factor_label") or f.get("factor") or "")
+
+
+def _finding_from_ranked_factor(f: dict) -> dict:
+    return {
+        "factor": _factor_key(f),
+        "label": _factor_label(f),
+        "verdict": str(f.get("verdict", "")),
+        "evidence": str(f.get("evidence", "")),
+    }
+
+
+def _diagnostic_result_from_ranked_factors(factors: list[dict]) -> dict | None:
+    if not factors:
+        return None
+    columns = ["factor", "label", "explained_share", "contribution", "a_value", "b_value", "verdict", "evidence"]
+    rows = [[
+        _factor_key(f),
+        _factor_label(f),
+        _num(f.get("explained_share")),
+        _num(f.get("contribution")),
+        _num(f.get("a_value")),
+        _num(f.get("b_value")),
+        str(f.get("verdict", "")),
+        str(f.get("evidence", "")),
+    ] for f in factors]
+    return {"columns": columns, "rows": rows, "row_count": len(rows), "chart_type": "bar"}
+
+
 @router.post("")
 def create_investigation(
     body: CreateInvestigation,
@@ -97,9 +138,12 @@ def get_investigation(investigation_id: str, db: DbSession = Depends(get_db)) ->
     findings = db.query(models.Finding).filter_by(investigation_id=inv.id).all()
     decision = db.query(models.BoardDecision).filter_by(investigation_id=inv.id).first()
     result = db.query(models.AuthorizedResult).filter_by(investigation_id=inv.id).first()
+    ranked_factors = decision.ranked_factors if decision is not None and isinstance(decision.ranked_factors, list) else []
     out = _serialize(inv)
     out["findings"] = [{"factor": f.factor, "label": f.label, "verdict": f.verdict,
                         "evidence": f.evidence} for f in findings]
+    if not out["findings"] and ranked_factors:
+        out["findings"] = [_finding_from_ranked_factor(f) for f in ranked_factors if isinstance(f, dict)]
     out["board_decision"] = (None if decision is None else
                              {"headline": decision.headline,
                               "primary_factor": decision.primary_factor,
@@ -108,6 +152,9 @@ def get_investigation(investigation_id: str, db: DbSession = Depends(get_db)) ->
     out["authorized_result"] = (None if result is None else
                                 {"columns": result.columns, "rows": result.rows,
                                  "row_count": result.row_count, "chart_type": result.chart_type})
+    if out["authorized_result"] is None and ranked_factors:
+        out["authorized_result"] = _diagnostic_result_from_ranked_factors(
+            [f for f in ranked_factors if isinstance(f, dict)])
     children = (db.query(models.Investigation)
                 .filter_by(parent_investigation_id=inv.id)
                 .order_by(models.Investigation.created_at.asc()).all())

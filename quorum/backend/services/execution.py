@@ -319,10 +319,11 @@ def _persist_descriptive(db, inv, result) -> None:
 
 def _persist_diagnostic(db, inv, result) -> None:
     rep = result.report or {}
+    findings = rep.get("findings", [])
     for f in rep.get("findings", []):
         db.add(models.Finding(
-            investigation_id=inv.id, investigator_role=f.get("factor", ""),
-            factor=f.get("factor", ""), label=f.get("label", ""),
+            investigation_id=inv.id, investigator_role=_factor_key(f),
+            factor=_factor_key(f), label=_factor_label(f),
             a_value=_num(f.get("a_value")), b_value=_num(f.get("b_value")),
             explained_share=_num(f.get("explained_share")),
             contribution=_num(f.get("contribution")),
@@ -334,7 +335,38 @@ def _persist_diagnostic(db, inv, result) -> None:
         residual_share=_num(rep.get("residual_share")) or 0.0,
         confidence=str(rep.get("confidence", "medium")),
         recommendation=rep.get("recommendation", "")))
+    _persist_diagnostic_result(db, inv, findings)
     inv.confidence = _CONF.get(str(rep.get("confidence", "medium")).lower(), 0.7)
+
+
+def _persist_diagnostic_result(db, inv, findings: list[dict]) -> None:
+    """Store diagnostic factors as a normal result so the UI can chart them."""
+    columns = ["factor", "label", "explained_share", "contribution", "a_value", "b_value", "verdict", "evidence"]
+    rows = []
+    for f in findings:
+        rows.append([
+            _factor_key(f),
+            _factor_label(f),
+            _num(f.get("explained_share")),
+            _num(f.get("contribution")),
+            _num(f.get("a_value")),
+            _num(f.get("b_value")),
+            str(f.get("verdict", "")),
+            str(f.get("evidence", "")),
+        ])
+    if rows:
+        db.add(models.AuthorizedResult(
+            investigation_id=inv.id, sql_text="",
+            columns=columns, rows=rows, row_count=len(rows),
+            chart_type="bar"))
+
+
+def _factor_key(f: dict) -> str:
+    return str(f.get("factor") or f.get("factor_key") or f.get("factor_label") or f.get("label") or "")
+
+
+def _factor_label(f: dict) -> str:
+    return str(f.get("label") or f.get("factor_label") or f.get("factor") or "")
 
 
 def _num(v):
@@ -579,11 +611,21 @@ def _run_band(db, inv) -> None:
 
     if rep.get("kind") == "investigation":
         room.status = "completed"
+        findings = rep.get("findings", [])
+        for f in findings:
+            db.add(models.Finding(
+                investigation_id=inv.id, investigator_role=_factor_key(f),
+                factor=_factor_key(f), label=_factor_label(f),
+                a_value=_num(f.get("a_value")), b_value=_num(f.get("b_value")),
+                explained_share=_num(f.get("explained_share")),
+                contribution=_num(f.get("contribution")),
+                verdict=str(f.get("verdict", "")), evidence=str(f.get("evidence", ""))))
+        _persist_diagnostic_result(db, inv, findings)
         inv.confidence = _CONF.get(str(rep.get("confidence", "medium")).lower(), 0.7)
         db.add(models.BoardDecision(
             investigation_id=inv.id, headline=rep.get("headline", ""),
             primary_factor=rep.get("primary_factor"),
-            ranked_factors=rep.get("findings", []), ruled_out=rep.get("ruled_out", []),
+            ranked_factors=findings, ruled_out=rep.get("ruled_out", []),
             confidence=str(rep.get("confidence", "medium")),
             recommendation=rep.get("recommendation", "")))
         inv.status = "completed"
