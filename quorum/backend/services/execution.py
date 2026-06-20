@@ -444,6 +444,12 @@ def _synthesize_band_transcript(db, room, rep: dict, band_messages: list) -> Non
     logger.info("Band transcript: synthesized 5-step chain from Decision Reporter content")
 
 
+def _sender_role(sender: str) -> str:
+    """Map a Band sender handle ('owner/decision-reporter') to a short role slug
+    for RoomMessage.sender_role (the tail after the last '/')."""
+    tail = (sender or "").split("/")[-1].strip().lower()
+    return (tail or "agent")[:48]
+
 
 def _run_band(db, inv) -> None:
     """Drive a Band room and persist the transcript + result.
@@ -501,55 +507,78 @@ def _run_band(db, inv) -> None:
     t0 = time.time()
     bridge.ask(room_info.id, _question_for(db, inv))
 
-    seen: set[str] = set()
-    record = None
+    # Live harvest: poll the Band room and persist each NEW message as it
+    # arrives, committing incrementally so the SSE feed (/rooms/{id}/stream)
+    # shows the conversation in real time. The filesystem run-store is NOT
+    # shared across services (the API and the agents worker run on separate
+    # Render instances), so completion is detected from the room itself — the
+    # Decision Reporter's message — rather than from newest_run_after().
     from core.run_store import newest_run_after
 
-    # Phase 1 — wait for run completion (up to 180s)
-    for _ in range(180):
-        record = newest_run_after(t0, room_id=room_info.id) or newest_run_after(t0)
-        if record:
-            break
-        time.sleep(1)
+    seen: set[str] = set()
+    record = None
+    reporter_seen = False
+    deadline = time.time() + 240
+    last_change = time.time()
 
-    # Phase 2 — harvest ALL messages now that the run is finished.
-    # Doing this after completion avoids the race where the Decision Reporter
-    # writes to the run-store before the other agents' messages are visible.
-    time.sleep(2)  # small grace period for Band to flush remaining messages
-    try:
-        msgs = bridge.client.list_messages(room_info.id, limit=200)
-        logger.warning(
-            "BAND FINAL SWEEP room=%s count=%s sample=%s",
-            room_info.id,
-            len(msgs),
-            msgs[:3],
-        )
+    while time.time() < deadline:
+        try:
+            msgs = bridge.client.list_messages(room_info.id, limit=200)
+        except Exception:
+            logger.debug("list_messages poll failed", exc_info=True)
+            msgs = []
+        added = False
         for m in msgs:
             mid = str(m.get("id") or "")
-            if mid in seen:
+            if not mid or mid in seen:
                 continue
             seen.add(mid)
             content = m.get("content", "")
+            sender = m.get("sender") or ""
             db.add(models.RoomMessage(
-                room_id=room.id, sender_role=(m.get("sender") or "")[:48],
+                room_id=room.id, sender_role=_sender_role(sender),
                 kind=ui_safety.kind_of(content),
                 safe_summary=ui_safety.safe_summary(content), raw_payload={}))
-        db.commit()
-    except Exception:
-        logger.debug("final message sweep failed", exc_info=True)
+            added = True
+            if "decision-reporter" in sender.lower() or "decision reporter" in sender.lower():
+                reporter_seen = True
+        if added:
+            db.commit()                       # flush so the live stream emits them
+            last_change = time.time()
+
+        # Structured report. Primary source is the Room row in shared Postgres
+        # (written by the agents worker via _save_run); fall back to the local
+        # filesystem run-store for co-located runs.
+        if record is None:
+            try:
+                db.refresh(room)
+            except Exception:
+                logger.debug("room refresh failed", exc_info=True)
+            rr = (room.shared_context or {}).get("run_report")
+            if rr:
+                record = {"report": rr}
+            else:
+                record = newest_run_after(t0, room_id=room_info.id) or newest_run_after(t0)
+
+        now = time.time()
+        if record is not None:
+            break                                       # have the full report
+        if reporter_seen and now - last_change > 4:     # reporter spoke + settled
+            break
+        if seen and now - last_change > 30:             # conversation went quiet
+            break
+        time.sleep(2)
 
     rep = (record or {}).get("report", {}) if record else {}
 
-    # Band only posts the Decision Reporter's final message to the room.
-    # Internal agent-to-agent collaboration is not exposed via the Band API.
-    # Synthesize the full Supervisor → SQL Analyst → Cost Sentinel →
-    # Governance Guardian → Decision Reporter chain from whatever the
-    # run-store report contains.
-    _synthesize_band_transcript(db, room, rep, band_messages=list(seen))
-    db.commit()
+    # Fallback only when no live messages were captured (co-located setups where
+    # the room exposes just the final message): synthesize the chain from rep.
+    if not seen:
+        _synthesize_band_transcript(db, room, rep, band_messages=[])
+        db.commit()
 
-    room.status = "completed"
     if rep.get("kind") == "investigation":
+        room.status = "completed"
         inv.confidence = _CONF.get(str(rep.get("confidence", "medium")).lower(), 0.7)
         db.add(models.BoardDecision(
             investigation_id=inv.id, headline=rep.get("headline", ""),
@@ -557,14 +586,24 @@ def _run_band(db, inv) -> None:
             ranked_factors=rep.get("findings", []), ruled_out=rep.get("ruled_out", []),
             confidence=str(rep.get("confidence", "medium")),
             recommendation=rep.get("recommendation", "")))
-    else:
+        inv.status = "completed"
+    elif rep:
+        room.status = "completed"
         db.add(models.AuthorizedResult(
             investigation_id=inv.id, sql_text=rep.get("sql_query", ""),
             columns=rep.get("result_columns", []), rows=rep.get("result_rows", []),
             row_count=int(rep.get("result_row_count", 0)), chart_type=rep.get("chart_type")))
         inv.risk_level = rep.get("risk_level", "low")
         inv.approval_required = bool(rep.get("approval_required", False))
-    inv.status = "completed"
+        inv.status = "completed"
+    else:
+        # No structured report reachable across services. The conversation is
+        # still persisted and visible. Mark a terminal status so the UI stops
+        # waiting: completed if the Decision Reporter finished, else escalated
+        # (e.g. the Supervisor asked the user to clarify, or it timed out).
+        room.status = "completed" if reporter_seen else "escalated"
+        inv.status = "completed" if reporter_seen else "escalated"
+
     inv.completed_at = datetime.now(timezone.utc)
     db.add_all([room, inv])
     db.commit()
