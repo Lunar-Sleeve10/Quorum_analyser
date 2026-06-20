@@ -7,8 +7,30 @@ import type {
 // (a trailing slash in NEXT_PUBLIC_API_BASE_URL yields 404s like //data-sources).
 const BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/+$/, "")
 
+// Single shared session-token key, also used by public/cover.html, so the cover
+// page and the dashboard stay on ONE session. A stable session_id keeps Band
+// room reuse working (one room per session+data-source); without sharing, each
+// surface churns sessions and the backend mints a new room every time.
+const TOKEN_KEY = "quorum_token"
+
+function readToken(): string | null {
+  let token = useSession.getState().token
+  if (!token && typeof window !== "undefined") {
+    token = window.localStorage.getItem(TOKEN_KEY)
+    if (token) useSession.getState().setToken(token)
+  }
+  return token
+}
+
+function persistToken(token: string): void {
+  useSession.getState().setToken(token)
+  if (typeof window !== "undefined") {
+    try { window.localStorage.setItem(TOKEN_KEY, token) } catch {}
+  }
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = useSession.getState().token
+  const token = readToken()
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(init?.headers as Record<string, string> | undefined),
@@ -18,7 +40,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error((data as { detail?: string }).detail ?? res.statusText)
   if (data && typeof data === "object" && (data as { session_token?: string }).session_token) {
-    useSession.getState().setToken((data as { session_token: string }).session_token)
+    persistToken((data as { session_token: string }).session_token)
   }
   return data as T
 }
@@ -57,7 +79,7 @@ export const api = {
       body: JSON.stringify({ data_source_id: dataSourceId, tables, columns }),
     }),
   uploadDataSource: async (file: File) => {
-    const token = useSession.getState().token
+    const token = readToken()
     const fd = new FormData()
     fd.append("file", file)
     const res = await fetch(`${BASE}/data-sources/upload`, {

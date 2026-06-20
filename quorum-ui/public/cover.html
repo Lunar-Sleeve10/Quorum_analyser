@@ -679,7 +679,11 @@
             // ---------------------------------------------------------------
 
             const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-            let sessionToken = null;
+            // Shared with the dashboard (lib/api.ts TOKEN_KEY) so the cover and
+            // app stay on ONE session -> stable Band room reuse per session+DB.
+            let sessionToken = (function () {
+                try { return window.localStorage.getItem("quorum_token"); } catch (_) { return null; }
+            })();
             let liveMode = false;
             let activeInvestigation = null;
             let running = false;
@@ -691,7 +695,10 @@
                 const res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
                 if (!res.ok) throw new Error(path + " → " + res.status);
                 const data = await res.json();
-                if (data && data.session_token) sessionToken = data.session_token;
+                if (data && data.session_token) {
+                    sessionToken = data.session_token;
+                    try { window.localStorage.setItem("quorum_token", sessionToken); } catch (_) {}
+                }
                 return data;
             }
 
