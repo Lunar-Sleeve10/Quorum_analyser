@@ -158,8 +158,10 @@ class BandBridge:
         if self.fixed_room_id:
             room = RoomInfo(id=self.fixed_room_id, name="Quorum (fixed room)")
             self._add_agents(room.id)
-            logger.info("Fixed Band room reused: %s (session=%s ds=%s)",
-                        room.id, session_id, data_source_id)
+            logger.warning(
+                "FIXED Band room in use: %s (BAND_ROOM_ID is set — per-(session,ds) "
+                "switching is DISABLED; unset it to switch rooms per DB) session=%s ds=%s",
+                room.id, session_id, data_source_id)
             return room
 
         # -- Look for an existing session room
@@ -171,8 +173,8 @@ class BandBridge:
         if existing is not None:
             existing.last_used_at = datetime.now(timezone.utc)
             db.add(existing)
-            logger.info(
-                "Reusing Band room %s for session=%s ds=%s",
+            logger.warning(
+                "REUSING Band room %s for session=%s ds=%s",
                 existing.band_room_id, session_id, data_source_id,
             )
             return RoomInfo(id=existing.band_room_id, name="Quorum (reused)")
