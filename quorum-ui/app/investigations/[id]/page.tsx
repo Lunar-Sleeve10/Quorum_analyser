@@ -6,7 +6,6 @@ import { motion, AnimatePresence } from "motion/react"
 import { useFollowup, useInvestigation, useRoom } from "@/hooks/use-api"
 import { useSession } from "@/store/session"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { TopologyBadge } from "@/components/topology-badge"
@@ -17,7 +16,7 @@ import { AgentRoom } from "@/components/agent-room"
 import { ReportActions } from "@/components/report-actions"
 import { WorkflowTimeline } from "@/components/workflow-timeline"
 import { ScrollReveal } from "@/components/motion/scroll-reveal"
-import { ShimmerCard, CyclingText } from "@/components/motion/shimmer"
+import { CyclingText } from "@/components/motion/shimmer"
 import {
   Star,
   StarOff,
@@ -26,10 +25,8 @@ import {
   Info,
   ArrowLeft,
   CheckCircle2,
-  AlertCircle,
   Link2,
   ChevronRight,
-  Radio,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -88,7 +85,7 @@ function LivePill() {
 /* ── Board verdict ───────────────────────────────────────────────────── */
 
 function BoardVerdict({ inv }: { inv: ReturnType<typeof useInvestigation>["data"] }) {
-  const [findingsOpen, setFindingsOpen] = useState(false)
+  const [findingsOpen, setFindingsOpen] = useState(true)
   if (!inv?.board_decision) return null
   const d = inv.board_decision
 
@@ -398,11 +395,14 @@ export default function InvestigationDetail({
               title="Analysis Results"
               description="Final validated findings generated after all review stages completed."
             />
-            {inv.board_decision ? (
+            {inv.board_decision && (
               <BoardVerdict inv={inv} />
-            ) : inv.authorized_result ? (
-              <ResultView result={inv.authorized_result} />
-            ) : null}
+            )}
+            {inv.authorized_result && (
+              <div className={inv.board_decision ? "mt-5 border-t border-border pt-5" : undefined}>
+                <ResultView result={inv.authorized_result} />
+              </div>
+            )}
           </div>
         </ScrollReveal>
       )}
