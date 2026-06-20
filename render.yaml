@@ -36,7 +36,9 @@ services:
       - key: ADJUDICATOR_PROVIDER
         value: aiml
       - key: SQL_ANALYST_PROVIDER
-        value: featherless
+        value: groq
+      - key: SQL_ANALYST_MODEL_CLOUD
+        value: groq/openai/gpt-oss-20b
       - key: GUARDIAN_PROVIDER
         value: featherless
       - key: REPORTER_PROVIDER
@@ -122,7 +124,9 @@ services:
       - key: ADJUDICATOR_PROVIDER
         value: aiml
       - key: SQL_ANALYST_PROVIDER
-        value: featherless
+        value: groq
+      - key: SQL_ANALYST_MODEL_CLOUD
+        value: groq/openai/gpt-oss-20b
       - key: GUARDIAN_PROVIDER
         value: featherless
       - key: REPORTER_PROVIDER
