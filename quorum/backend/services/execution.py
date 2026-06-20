@@ -504,6 +504,16 @@ def _run_band(db, inv) -> None:
         session_id=inv.session_id,
         data_source_id=inv.data_source_id,
     )
+    # Persist the SessionRoom registry NOW, before any step that can raise
+    # (e.g. _db_config_for). Otherwise a later failure rolls back the room
+    # registration and the next investigation mints ANOTHER room — the "random
+    # rooms + incomplete investigations" symptom. Committing here guarantees the
+    # (session, data_source) -> room mapping survives for reuse.
+    db.commit()
+    logger.info(
+        "Band room resolved for investigation=%s session=%s data_source=%s -> room=%s",
+        inv.id, inv.session_id, inv.data_source_id, room_info.id,
+    )
 
     # Resolve the database config for this investigation's data source and
     # embed it in shared_context.  Band agents read this dict instead of
@@ -539,75 +549,55 @@ def _run_band(db, inv) -> None:
     t0 = time.time()
     bridge.ask(room_info.id, _question_for(db, inv))
 
-    # Live harvest: poll the Band room and persist each NEW message as it
-    # arrives, committing incrementally so the SSE feed (/rooms/{id}/stream)
-    # shows the conversation in real time. The filesystem run-store is NOT
-    # shared across services (the API and the agents worker run on separate
-    # Render instances), so completion is detected from the room itself — the
-    # Decision Reporter's message — rather than from newest_run_after().
+    # Wait for completion, then synthesize the transcript. Band exposes ONLY the
+    # Decision Reporter's final message — the internal Supervisor → SQL Analyst →
+    # Cost Sentinel → Governance Guardian handoffs never appear in the room feed
+    # — so streaming individual messages would only ever yield the reporter's
+    # lone line. Instead we detect completion (the report landing in shared
+    # Postgres, written by the agents worker via _save_run; filesystem fallback)
+    # and then synthesize the full agent chain for the Agent Room panel.
     from core.run_store import newest_run_after
 
-    seen: set[str] = set()
     record = None
     reporter_seen = False
+    reporter_at = None
     deadline = time.time() + 240
-    last_change = time.time()
 
     while time.time() < deadline:
-        try:
-            msgs = bridge.client.list_messages(room_info.id, limit=200)
-        except Exception:
-            logger.debug("list_messages poll failed", exc_info=True)
-            msgs = []
-        added = False
-        for m in msgs:
-            mid = str(m.get("id") or "")
-            if not mid or mid in seen:
-                continue
-            seen.add(mid)
-            content = m.get("content", "")
-            sender = m.get("sender") or ""
-            db.add(models.RoomMessage(
-                room_id=room.id, sender_role=_sender_role(sender),
-                kind=ui_safety.kind_of(content),
-                safe_summary=ui_safety.safe_summary(content), raw_payload={}))
-            added = True
-            if "decision-reporter" in sender.lower() or "decision reporter" in sender.lower():
-                reporter_seen = True
-        if added:
-            db.commit()                       # flush so the live stream emits them
-            last_change = time.time()
-
-        # Structured report. Primary source is the Room row in shared Postgres
-        # (written by the agents worker via _save_run); fall back to the local
-        # filesystem run-store for co-located runs.
+        # Authoritative completion signal: the structured report, shared via the
+        # Room row in Postgres (cross-service) with a filesystem fallback.
         if record is None:
             try:
                 db.refresh(room)
             except Exception:
                 logger.debug("room refresh failed", exc_info=True)
             rr = (room.shared_context or {}).get("run_report")
-            if rr:
-                record = {"report": rr}
-            else:
-                record = newest_run_after(t0, room_id=room_info.id) or newest_run_after(t0)
-
-        now = time.time()
+            record = ({"report": rr} if rr
+                      else newest_run_after(t0, room_id=room_info.id) or newest_run_after(t0))
         if record is not None:
-            break                                       # have the full report
-        if reporter_seen and now - last_change > 4:     # reporter spoke + settled
             break
-        if seen and now - last_change > 30:             # conversation went quiet
+
+        # Secondary signal: the Decision Reporter's message in the room. If it
+        # appeared but no report landed shortly after, stop waiting.
+        try:
+            for m in bridge.client.list_messages(room_info.id, limit=200):
+                s = (m.get("sender") or "").lower()
+                if "decision-reporter" in s or "decision reporter" in s:
+                    reporter_seen = True
+                    reporter_at = reporter_at or time.time()
+        except Exception:
+            logger.debug("list_messages poll failed", exc_info=True)
+        if reporter_at and time.time() - reporter_at > 15:
             break
         time.sleep(2)
 
     rep = (record or {}).get("report", {}) if record else {}
 
-    # Fallback only when no live messages were captured (co-located setups where
-    # the room exposes just the final message): synthesize the chain from rep.
-    if not seen:
-        _synthesize_band_transcript(db, room, rep, band_messages=[])
-        db.commit()
+    # Band never exposes the agent-to-agent handoffs, so ALWAYS synthesize the
+    # full Supervisor → SQL Analyst → Cost Sentinel → Guardian → Decision Reporter
+    # chain for the Agent Room panel (not just the reporter's lone message).
+    _synthesize_band_transcript(db, room, rep, band_messages=[])
+    db.commit()
 
     if rep.get("kind") == "investigation":
         room.status = "completed"

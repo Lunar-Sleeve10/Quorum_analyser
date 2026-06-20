@@ -67,6 +67,35 @@ DISPLAY_NAMES: dict[str, str] = {
 VALID_ROLES = set(DISPLAY_NAMES) - {"user", "dashboard"}
 
 
+def _localize_sqlite_path(connection_string: str) -> str:
+    """Map Render's bundled sample paths to this checkout for local agents."""
+    p = Path(connection_string)
+    if p.exists():
+        return connection_string
+
+    normalized = connection_string.replace("\\", "/")
+    marker = "/data/samples/"
+    if marker in normalized:
+        candidate = Path(__file__).resolve().parent.parent / "data" / "samples" / normalized.rsplit(marker, 1)[1]
+        if candidate.exists():
+            logger.info("Mapped remote SQLite sample path %s -> %s", connection_string, candidate)
+            return str(candidate)
+
+    return connection_string
+
+
+def _sql_failure_hint(sql_result: SQLResult) -> str:
+    err = sql_result.error_message or "unknown SQL execution error"
+    hint = f"The query failed to execute: {err}. Fix the SQL using the real schema and valid join keys."
+    sql = (sql_result.sql_query or "").lower()
+    if "artistid" in err.lower() or "artistid" in sql:
+        hint += (
+            " For Chinook, artists join through Artist.ArtistId -> Album.ArtistId "
+            "-> Track.AlbumId -> InvoiceLine.TrackId; InvoiceLine and Track do not have ArtistId."
+        )
+    return hint
+
+
 def _slug(role: str) -> str:
     """Participant handle tail Band assigns from the display name:
     'SQL Analyst' -> 'sql-analyst', 'Governance Guardian' -> 'governance-guardian'."""
@@ -243,9 +272,12 @@ class QuorumBandAdapter(SimpleAdapter):  # type: ignore[misc]
                 # normalises this to a float, but guard here too for robustness.
                 raw_timeout = raw.get("timeout")
                 timeout_val = float(raw_timeout) if raw_timeout is not None else 30.0
+                conn = raw["connection_string"]
+                if DatabaseType(db_type_str) == DatabaseType.SQLITE:
+                    conn = _localize_sqlite_path(conn)
                 return DatabaseConfig(
                     db_type=DatabaseType(db_type_str),
-                    connection_string=raw["connection_string"],
+                    connection_string=conn,
                     max_rows=int(raw.get("max_rows") or 10_000),
                     timeout=timeout_val,
                     read_only=bool(raw.get("read_only", True)),
@@ -385,6 +417,27 @@ class QuorumBandAdapter(SimpleAdapter):  # type: ignore[misc]
     # ------------------------------------------------------------------
     async def _decide_compliance(self, sql_result, tools, room_id, ctx) -> None:
         """Supervisor decides the SQL plan-compliance retry (Band path)."""
+        if sql_result.execution_status == "error":
+            if ctx.sql_revision_count < BandConfig.MAX_REVISIONS:
+                ctx.sql_revision_count += 1
+                rev = RevisionRequest(
+                    envelope=make_envelope(session_id=room_id, from_role="supervisor",
+                                           channel=BandConfig.CHANNEL_TASKS,
+                                           topic=BandConfig.TOPIC_REVISION, to_role="sql_analyst",
+                                           revision_count=ctx.sql_revision_count),
+                    issue_type=IssueType.OTHER, revision_hint=_sql_failure_hint(sql_result),
+                    previous_sql=sql_result.sql_query, must_succeed=True)
+                await self._handoff(tools, room_id, rev, "sql_analyst",
+                                    "SQL execution failed; requesting one corrected query.")
+                return
+            await self._post(
+                tools,
+                room_id,
+                f"SQL execution failed after revision: {sql_result.error_message or 'unknown error'}",
+                target_role="dashboard",
+            )
+            return
+
         g = sql_result.grounding
         dims = list(g.planned_dimensions) if g else []
         subtasks = list(g.subtasks) if g else []
@@ -457,6 +510,17 @@ class QuorumBandAdapter(SimpleAdapter):  # type: ignore[misc]
 
     async def _on_guardian(self, decoded, tools, room_id, ctx) -> None:
         if not isinstance(decoded.message, SQLResult):
+            return
+        if (
+            decoded.message.execution_status == "error"
+            and decoded.message.envelope.revision_count >= BandConfig.MAX_REVISIONS
+        ):
+            await self._post(
+                tools,
+                room_id,
+                f"SQL execution failed after revision: {decoded.message.error_message or 'unknown error'}",
+                target_role="dashboard",
+            )
             return
         outcome = self._agent.review(decoded.message)
         if isinstance(outcome, RevisionRequest):

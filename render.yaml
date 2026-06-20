@@ -36,7 +36,9 @@ services:
       - key: ADJUDICATOR_PROVIDER
         value: aiml
       - key: SQL_ANALYST_PROVIDER
-        value: featherless
+        value: groq
+      - key: SQL_ANALYST_MODEL_CLOUD
+        value: groq/openai/gpt-oss-20b
       - key: GUARDIAN_PROVIDER
         value: featherless
       - key: REPORTER_PROVIDER
@@ -76,9 +78,9 @@ services:
         value: https://app.band.ai/
       - key: THENVOI_WS_URL
         value: wss://app.band.ai/api/v1/socket/websocket
-      # Optional: pin a fixed room instead of auto-creating per (session,db).
-      - key: BAND_ROOM_ID
-        sync: false
+      # NOTE: do NOT set BAND_ROOM_ID. If set, every investigation is forced into
+      # one fixed room, overriding the per-(session, data_source) switching.
+      # Leave it unset so rooms switch only when the session or the DB changes.
       - key: MAX_INVESTIGATIONS_PER_SESSION
         value: "3"
       - key: MAX_FOLLOWUPS_PER_INVESTIGATION
@@ -112,8 +114,6 @@ services:
         sync: false
       - key: DASHBOARD_AGENT_ID
         sync: false
-      - key: BAND_ROOM_ID
-        sync: false
       # LLM routing (must match the API service)
       - key: LLM_BACKEND
         sync: false
@@ -122,7 +122,9 @@ services:
       - key: ADJUDICATOR_PROVIDER
         value: aiml
       - key: SQL_ANALYST_PROVIDER
-        value: featherless
+        value: groq
+      - key: SQL_ANALYST_MODEL_CLOUD
+        value: groq/openai/gpt-oss-20b
       - key: GUARDIAN_PROVIDER
         value: featherless
       - key: REPORTER_PROVIDER

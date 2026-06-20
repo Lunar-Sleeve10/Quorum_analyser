@@ -45,16 +45,37 @@ export function ReportView({ inv, done }: { inv: InvestigationDetail; done: bool
           </div>
           <div>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Executive summary</p>
-            <p className="leading-relaxed">{summary(inv)}</p>
+            <p className="leading-relaxed whitespace-pre-line">{inv.analysis?.narrative || summary(inv)}</p>
           </div>
-          {inv.board_decision?.recommendation && (
+          {(inv.board_decision?.recommendation || inv.analysis?.recommended_action) && (
             <div className="rounded-md border border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-900 dark:bg-indigo-950/30">
               <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">Recommended action</p>
-              <p className="mt-0.5">{inv.board_decision.recommendation}</p>
+              <p className="mt-0.5">{inv.board_decision?.recommendation || inv.analysis?.recommended_action}</p>
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Analysis (finding + implication) */}
+      {inv.analysis && (inv.analysis.finding || inv.analysis.implication) && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Analysis</CardTitle></CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {inv.analysis.finding && (
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Finding</p>
+                <p className="leading-relaxed">{inv.analysis.finding}</p>
+              </div>
+            )}
+            {inv.analysis.implication && (
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Implication</p>
+                <p className="leading-relaxed">{inv.analysis.implication}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Verdict (diagnostic) */}
       {inv.board_decision && (

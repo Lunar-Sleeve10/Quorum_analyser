@@ -73,10 +73,18 @@ export interface FollowupRef {
   confidence: number | null
 }
 
+export interface AnalysisInsight {
+  finding: string
+  implication: string
+  recommended_action: string
+  narrative: string
+}
+
 export interface InvestigationDetail extends Investigation {
   findings: Finding[]
   board_decision: BoardDecision | null
   authorized_result: AuthorizedResult | null
+  analysis: AnalysisInsight | null
   followups: FollowupRef[]
   cost: CostInfo | null
   governance: GovEvent[]

@@ -368,20 +368,25 @@ class VisualizationReportingAgent(BaseAgent[ValidatedResult, FinalReport]):
         df: Optional[pd.DataFrame], decision: _ChartDecision,
     ) -> str:
         sql_result = message.sql_result
-        sample = json.dumps(sql_result.result_sample[:5], default=str)[:800]
+        sample = json.dumps(sql_result.result_sample[:10], default=str)[:1600]
         chart_label = decision.chart_type.value if decision.chart_type else "table"
         notes = "; ".join(message.data_quality_notes[:3])
-        return f"""You are a Decision Advisor. Turn this query result into a
-business decision, not just a description. Respond in EXACTLY these four lines,
-each prefixed with the label, no extra text:
+        return f"""You are a senior data analyst writing the analysis section of an
+executive report. Produce a substantive, specific analysis of the query result
+below — not a one-line description.
 
-FINDING: <the single most important fact from the data, with the concrete number>
-IMPLICATION: <what this means for the business>
-ACTION: <one specific recommended next step>
-SUMMARY: <one-sentence plain-language recap>
+Write these four labeled sections. FINDING, IMPLICATION and ANALYSIS must each be
+2-4 full sentences; ACTION may be 1-3 sentences. Ground every claim in concrete
+numbers from the data: cite exact values, the leading and trailing items, the
+gap between the top result and the rest, totals/shares, and any notable
+concentration, spread, or outliers. Do NOT invent data and never inflate
+magnitudes (e.g. never turn 138.60 into "138 million"). Use only what the data
+supports.
 
-Be precise with numbers; never inflate magnitudes (do not turn 138.60 into
-"138 million"). Use only what the data supports.
+FINDING: <the key quantified results — what stands out, the top value(s), how far ahead the leader is, any concentration or even spread across rows>
+IMPLICATION: <what this means for the business and why it matters; connect the numbers to a concrete decision context>
+ACTION: <specific, prioritized next step(s) with brief rationale tied to the finding>
+ANALYSIS: <a cohesive paragraph that synthesizes the above into a clear narrative a decision-maker can act on>
 
 Question: {ctx.normalized_question}
 Query pattern: {ctx.query_pattern}
@@ -407,28 +412,49 @@ Data quality notes: {notes}"""
 
     @staticmethod
     def _clean_decision_text(content: str) -> str:
-        """Keep the labeled FINDING/IMPLICATION/ACTION/SUMMARY lines as-is.
-        Falls back to the first few trimmed lines if labels are absent."""
-        labels = ("FINDING:", "IMPLICATION:", "ACTION:", "SUMMARY:")
-        lines = [ln.strip() for ln in (content or "").splitlines() if ln.strip()]
-        kept = [ln for ln in lines if ln.upper().startswith(labels)]
-        return "\n".join(kept) if kept else "\n".join(lines[:5])
+        """Keep the labeled, possibly multi-line analysis as-is. Drops any
+        preamble before the first label; falls back to the trimmed text when no
+        labels are present."""
+        labels = ("FINDING:", "IMPLICATION:", "ACTION:", "ANALYSIS:", "SUMMARY:")
+        text = (content or "").strip()
+        if not text:
+            return ""
+        lines = text.splitlines()
+        start = next((i for i, ln in enumerate(lines)
+                      if ln.strip().upper().startswith(labels)), None)
+        if start is None:
+            return text
+        return "\n".join(lines[start:]).strip()
 
     @staticmethod
     def _parse_decision(text: str) -> dict:
-        """Extract decision fields from labeled summary text."""
-        out = {"finding": "", "implication": "", "recommended_action": "", "recap": ""}
+        """Extract decision fields from labeled summary text. Content for a label
+        may span multiple lines (until the next label)."""
+        label_map = {
+            "FINDING": "finding",
+            "IMPLICATION": "implication",
+            "ACTION": "recommended_action",
+            "ANALYSIS": "narrative",
+            "SUMMARY": "recap",
+        }
+        out = {v: "" for v in label_map.values()}
+        buf: dict[str, list[str]] = {v: [] for v in label_map.values()}
+        current: Optional[str] = None
         for ln in (text or "").splitlines():
             s = ln.strip()
-            up = s.upper()
-            if up.startswith("FINDING:"):
-                out["finding"] = s.split(":", 1)[1].strip()
-            elif up.startswith("IMPLICATION:"):
-                out["implication"] = s.split(":", 1)[1].strip()
-            elif up.startswith("ACTION:"):
-                out["recommended_action"] = s.split(":", 1)[1].strip()
-            elif up.startswith("SUMMARY:"):
-                out["recap"] = s.split(":", 1)[1].strip()
+            if not s:
+                continue
+            matched = False
+            for lab, key in label_map.items():
+                if s.upper().startswith(lab + ":"):
+                    buf[key].append(s.split(":", 1)[1].strip())
+                    current = key
+                    matched = True
+                    break
+            if not matched and current is not None:
+                buf[current].append(s)
+        for key, parts in buf.items():
+            out[key] = " ".join(p for p in parts if p).strip()
         return out
 
     def _decision_fields(self, summary: str, sql_result) -> dict:
@@ -476,30 +502,48 @@ Data quality notes: {notes}"""
 
         cols = sql_result.result_columns
         n = sql_result.result_row_count
-        finding = f"Returned {n} row(s) across {len(cols)} column(s): {', '.join(cols)}."
-        if df is not None and not df.empty and decision.y and decision.y in df.columns:
-            try:
-                top_val = df[decision.y].max()
-                label_col = decision.x or decision.label_col
-                if label_col and label_col in df.columns:
-                    top_row = df.loc[df[decision.y].idxmax()]
-                    finding = (
-                        f"Highest {self._label(decision.y)} is {top_val} "
-                        f"for {top_row[label_col]} (out of {n} rows)."
-                    )
-                else:
-                    finding = f"Peak {self._label(decision.y)} is {top_val} across {n} rows."
-            except Exception:
-                pass
+        chart_label = decision.chart_type.value if decision.chart_type else "table"
+        ycol = decision.y or decision.value_col
+        label_col = decision.x or decision.label_col
+        finding = f"The query returned {n} row(s) across {len(cols)} field(s): {', '.join(cols)}."
+        analysis = f"The result set has {n} row(s); see the {chart_label} for the full distribution."
+        action = (f"Review the {chart_label} and confirm it answers the question; "
+                  f"drill into specific segments if needed.")
+        try:
+            if df is not None and not df.empty and ycol and ycol in df.columns:
+                s = pd.to_numeric(df[ycol], errors="coerce").dropna()
+                if not s.empty:
+                    total = float(s.sum())
+                    top_val = float(s.max())
+                    share = (top_val / total * 100.0) if total else 0.0
+                    ylabel = self._label(ycol)
+                    if label_col and label_col in df.columns:
+                        top_name = df.loc[s.idxmax(), label_col]
+                        ordered = df.assign(_v=s).sort_values("_v", ascending=False)
+                        gap = ""
+                        if len(ordered) >= 2 and float(ordered.iloc[1]["_v"]):
+                            sv = float(ordered.iloc[1]["_v"])
+                            gap = (f" — {top_val/sv:.1f}x the next item "
+                                   f"({ordered.iloc[1][label_col]}, {sv:,.2f})")
+                        finding = (f"{top_name} leads {ylabel} with {top_val:,.2f}, "
+                                   f"{share:.0f}% of the {total:,.2f} total across {n} rows{gap}.")
+                        spread = "concentrated in" if share >= 40 else "led by"
+                        analysis = (f"Across {n} rows, {ylabel} is {spread} {top_name} "
+                                    f"({top_val:,.2f} of {total:,.2f} total). "
+                                    f"The {chart_label} shows how the remaining items compare.")
+                        action = (f"Prioritize {top_name} given its share of {ylabel}; "
+                                  f"investigate what drives the gap to the rest.")
+                    else:
+                        finding = f"Peak {ylabel} is {top_val:,.2f} (total {total:,.2f}) across {n} rows."
+        except Exception:
+            pass
 
         note = message.data_quality_notes[0] if message.data_quality_notes else "Data passed quality checks."
-        chart_label = decision.chart_type.value if decision.chart_type else "table"
         return (
             f"FINDING: {finding}\n"
             f"IMPLICATION: {note}\n"
-            f"ACTION: Review the {chart_label} and confirm it answers the question; "
-            f"drill into specific segments if needed.\n"
-            f"SUMMARY: {n} row(s) returned, presented as a {chart_label}."
+            f"ACTION: {action}\n"
+            f"ANALYSIS: {analysis}"
         )
 
     # ------------------------------------------------------------------
@@ -515,6 +559,8 @@ Data quality notes: {notes}"""
         now = datetime.now(timezone.utc)
         total_latency = max(0.0, (now - ctx.created_at).total_seconds())
         revision_occurred = bool(message.revision_applied or ctx.revision_count >= 1)
+        parsed = self._parse_decision(summary)
+        narrative = parsed.get("narrative") or parsed.get("recap") or summary
 
         ctx.put_artifact("reporting_metadata", {
             "chart_spec_ref": chart_ref,
@@ -542,7 +588,7 @@ Data quality notes: {notes}"""
             result_row_count=sql_result.result_row_count,
             chart_type=decision.chart_type,
             chart_spec_ref=chart_ref,
-            narrative_summary=summary,
+            narrative_summary=narrative,
             total_latency_seconds=round(total_latency, 2),
             llm_call_count=ctx.total_llm_calls(),
             revision_occurred=revision_occurred,
