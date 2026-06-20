@@ -168,6 +168,22 @@ def get_investigation(investigation_id: str, db: DbSession = Depends(get_db)) ->
     out["governance"] = [{"type": g.type, "detail": g.detail,
                           "ts": g.ts.isoformat() if g.ts else None} for g in gov]
     out["sql"] = result.sql_text if result is not None else None
+    # Surface the Decision Reporter's analysis (finding / implication / action /
+    # narrative). The full report is stashed on the Room row by the agents worker
+    # (_save_run -> Room.shared_context["run_report"]).
+    room = (db.query(models.Room).filter_by(investigation_id=inv.id)
+            .order_by(models.Room.created_at.desc()).first())
+    rep = (room.shared_context or {}).get("run_report") if room is not None else None
+    if isinstance(rep, dict) and any(rep.get(k) for k in
+                                     ("narrative_summary", "finding", "implication", "recommended_action")):
+        out["analysis"] = {
+            "finding": rep.get("finding") or "",
+            "implication": rep.get("implication") or "",
+            "recommended_action": rep.get("recommended_action") or "",
+            "narrative": rep.get("narrative_summary") or "",
+        }
+    else:
+        out["analysis"] = None
     return out
 
 
