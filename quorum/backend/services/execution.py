@@ -380,7 +380,8 @@ def _num(v):
 # BAND mode — real room (wired here; runs when Band is configured)
 # ---------------------------------------------------------------------------
 
-def _synthesize_band_transcript(db, room, rep: dict, band_messages: list) -> None:
+def _synthesize_band_transcript(db, room, rep: dict, band_messages: list,
+                                topology: str = "") -> None:
     """Build a full Supervisor → SQL Analyst → Cost Sentinel → Governance Guardian
     → Decision Reporter transcript for the UI.
 
@@ -439,6 +440,39 @@ def _synthesize_band_transcript(db, room, rep: dict, band_messages: list) -> Non
         pass
 
     kind = rep.get("kind", "descriptive")
+
+    # Diagnostic ("why" / fork-join) questions use a different specialist chain:
+    # Supervisor -> Investigators (parallel) -> Adjudicator -> Decision Reporter.
+    if kind == "investigation" or topology == "investigation_board":
+        headline = rep.get("headline", "") or finding
+        primary = rep.get("primary_factor", "")
+        recommendation = rep.get("recommendation", "") or rec_action
+        factors = rep.get("findings", []) or rep.get("ranked_factors", [])
+        add("Supervisor", "Investigator", "RawText",
+            "diagnostic question — fanning out parallel investigators"
+            + (f": {question[:120]}" if question else ""))
+        if factors:
+            for f in factors[:6]:
+                if isinstance(f, dict):
+                    lbl = f.get("label") or f.get("factor") or "candidate factor"
+                    ev = f.get("evidence") or ""
+                else:
+                    lbl, ev = str(f), ""
+                add("Investigator", "Adjudicator", "InvestigatorFinding",
+                    f"Investigated {lbl}" + (f" — {ev[:90]}" if ev else ""))
+        else:
+            add("Investigator", "Adjudicator", "InvestigatorFinding",
+                "Investigated candidate factors in parallel")
+        add("Adjudicator", "Decision Reporter", "BoardDecision",
+            (f"Verdict: {headline}" if headline else "Board reached a verdict")
+            + (f" (primary driver: {primary})" if primary else ""))
+        rep_sum = headline or "Decision report posted"
+        if recommendation:
+            rep_sum += f" — Action: {recommendation[:100]}"
+        add("Decision Reporter", "", "FinalReport", rep_sum)
+        room.active_agents = ["Supervisor", "Investigator", "Adjudicator", "Decision Reporter"]
+        logger.info("Band transcript: synthesized diagnostic chain")
+        return
 
     # 1. Supervisor opens the session
     add("Supervisor", "SQL Analyst", "RawText",
@@ -546,6 +580,16 @@ def _run_band(db, inv) -> None:
     db.add(room)
     db.commit()  # commits both the Room row and any new/updated SessionRoom row
 
+    # Snapshot messages already in the room BEFORE posting. Rooms are reused
+    # across a session, so the feed includes PRIOR investigations' Decision
+    # Reporter messages; without this, completion detection fires on a stale
+    # message and abandons THIS run before its report lands (the "? rows" /
+    # placeholder follow-up symptom).
+    try:
+        pre_ids = {str(m.get("id")) for m in bridge.client.list_messages(room_info.id, limit=200)}
+    except Exception:
+        pre_ids = set()
+
     t0 = time.time()
     bridge.ask(room_info.id, _question_for(db, inv))
 
@@ -581,6 +625,8 @@ def _run_band(db, inv) -> None:
         # appeared but no report landed shortly after, stop waiting.
         try:
             for m in bridge.client.list_messages(room_info.id, limit=200):
+                if str(m.get("id")) in pre_ids:
+                    continue  # prior investigation in this reused room
                 s = (m.get("sender") or "").lower()
                 if "decision-reporter" in s or "decision reporter" in s:
                     reporter_seen = True
@@ -596,7 +642,7 @@ def _run_band(db, inv) -> None:
     # Band never exposes the agent-to-agent handoffs, so ALWAYS synthesize the
     # full Supervisor → SQL Analyst → Cost Sentinel → Guardian → Decision Reporter
     # chain for the Agent Room panel (not just the reporter's lone message).
-    _synthesize_band_transcript(db, room, rep, band_messages=[])
+    _synthesize_band_transcript(db, room, rep, band_messages=[], topology=inv.topology)
     db.commit()
 
     if rep.get("kind") == "investigation":
